@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>دستیار ترید | چارت زنده</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root{--bg:#000;--panel:#0a0c10;--panel2:#10131a;--grid:#1a1e28;--txt:#e6e8ee;--mut:#7d8496;--up:#22d3a0;--dn:#ff5470;--acc:#3d7bff;--gold:#ffd24a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;overflow:hidden;overscroll-behavior:none}
+.num{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+#app{display:flex;flex-direction:column;height:100%;padding-top:env(safe-area-inset-top,0px)}
+header{display:flex;align-items:center;gap:10px;padding:8px 12px 4px;direction:ltr}
+button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--grid);border-radius:10px;padding:7px 11px}
+button:active{opacity:.65}
+button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+#symBtn{font-weight:700;font-size:15px;letter-spacing:.3px}
+#price{font-size:22px;font-weight:700;direction:ltr;font-variant-numeric:tabular-nums;transition:color .15s}
+#chg{font-size:13px;direction:ltr}
+.g{color:var(--up)}.r{color:var(--dn)}
+#live{width:8px;height:8px;border-radius:50%;background:#444;margin-left:auto}
+#live.ok{background:var(--up);box-shadow:0 0 8px var(--up)}
+#tfs{display:flex;gap:6px;padding:2px 12px 6px;direction:ltr;overflow-x:auto;scrollbar-width:none}
+#tfs button{padding:4px 11px;font-size:12.5px;flex:0 0 auto;border-radius:8px;background:transparent;border-color:transparent;color:var(--mut)}
+#tfs button.on{background:#1b2236;color:#fff;border-color:#2a3350}
+#chips{display:none;gap:6px;padding:0 12px 6px;overflow-x:auto;scrollbar-width:none;direction:ltr}
+#chips button{flex:0 0 auto;font-size:12px;padding:4px 10px;border-radius:999px;background:var(--panel);color:var(--txt)}
+#chips button.on{border-color:var(--gold);color:var(--gold);background:#1a1606}
+#legend{font-size:11px;color:var(--mut);padding:0 12px 3px;min-height:15px;direction:ltr;white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}
+#wrap{flex:1;display:flex;flex-direction:column;position:relative;min-height:0;direction:ltr}
+#chart{flex:1;min-height:0}
+#rsi{height:100px;display:none;border-top:1px solid var(--grid)}
+#measure{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#000c;border:1px solid var(--grid);border-radius:10px;padding:6px 10px;font-size:12px;display:none;z-index:5;direction:rtl}
+#load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#000d;z-index:4;font-size:14px}
+#evt{position:absolute;top:8px;left:8px;right:8px;z-index:6;display:none;padding:10px 12px;border-radius:12px;font-size:13px;direction:rtl;line-height:1.7;border:1px solid;backdrop-filter:blur(6px)}
+#evt b{display:block;font-size:14px}
+#evt.win{background:#04251dee;border-color:#157a5c}
+#evt.warn{background:#2b2204ee;border-color:#8a6d12}
+#evt.bad{background:#2d0a12ee;border-color:#9c2740}
+
+/* position indicator */
+#pp{display:none;background:var(--panel);border-top:1px solid var(--grid);max-height:48vh;overflow-y:auto;direction:rtl;-webkit-overflow-scrolling:touch}
+#ppHead{display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:12.5px;white-space:nowrap;overflow:hidden;position:sticky;top:0;background:var(--panel);z-index:2}
+#ppHead .sp{flex:1}
+#ppHead i{font-style:normal;color:var(--mut);transition:transform .2s}
+#pp.open #ppHead i{transform:rotate(180deg)}
+#ppBody{display:none;padding:2px 12px 12px;font-size:13px}
+#pp.open #ppBody{display:block}
+.kv{display:flex;justify-content:space-between;gap:8px;padding:4px 0;color:var(--mut)}
+.kv b{color:var(--txt)}
+.bl{display:flex;justify-content:space-between;margin:8px 0 4px;font-size:12px;color:var(--mut)}
+.bar{position:relative;height:7px;background:#161a24;border-radius:5px;overflow:hidden;direction:ltr}
+.bar i{display:block;height:100%;width:0;border-radius:5px;transition:width .25s}
+.bar .gb{background:linear-gradient(90deg,#128f6e,var(--up))}
+.bar .rb{background:linear-gradient(90deg,#a8334a,var(--dn))}
+.bar s{position:absolute;top:0;bottom:0;width:1px;background:#000a}
+.lv{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #181c26;font-size:12.5px}
+.lv em{font-style:normal;color:var(--mut);min-width:64px;text-align:left}
+.lv.done{opacity:.5}
+.lv.done em{color:var(--up)}
+.next{margin:10px 0 6px;padding:9px 10px;border-radius:10px;background:var(--panel2);border:1px solid var(--grid);line-height:1.75}
+.next.hot{background:#04251d;border-color:#157a5c}
+.adv{margin:8px 0;padding:9px 10px;border-radius:10px;background:#0d1020;border:1px solid #1d2442;line-height:1.85;font-size:12.5px}
+.adv h4{margin:0 0 4px;font-size:13px}
+.adv div+div{margin-top:3px}
+.acts{display:flex;gap:6px;margin-top:8px}
+.acts button{flex:1;font-size:12.5px;padding:9px 4px}
+.acts .go{background:#06382c;border-color:#157a5c}
+.acts .danger{background:#3a0e18;border-color:#9c2740}
+.acts button:disabled{opacity:.35}
+.hint{font-size:11px;color:var(--mut);margin-top:8px;line-height:1.7}
+
+#alertbar{display:none;align-items:center;gap:8px;padding:8px 10px;background:#101a45;font-size:13px}
+#alertbar span{flex:1}
+#tools{display:flex;gap:6px;padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));overflow-x:auto;background:var(--panel);border-top:1px solid var(--grid);scrollbar-width:none}
+#tools button{flex:0 0 auto;min-width:62px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;padding:6px 8px}
+#tools button i{font-style:normal;font-size:17px;line-height:1}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#000e;border:1px solid var(--grid);color:#fff;padding:8px 14px;border-radius:12px;font-size:13px;display:none;z-index:50;max-width:90%;text-align:center}
+.sheet{position:fixed;inset:0;background:#000b;display:none;align-items:flex-end;z-index:40}
+.sheet.open{display:flex}
+.card{background:var(--panel);width:100%;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));max-height:75%;overflow:auto;border-top:1px solid var(--grid)}
+.card h3{margin:0 0 10px;font-size:15px}
+.card p{line-height:1.9;font-size:13px;margin:6px 0}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;direction:ltr}
+.row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--grid)}
+.row input[type=checkbox]{width:22px;height:22px}
+input[type=text]{width:100%;background:#000;color:var(--txt);border:1px solid var(--grid);border-radius:10px;padding:9px;font-size:15px;margin-top:10px;direction:ltr}
+.two{display:flex;gap:8px;margin-top:12px}.two button{flex:1;padding:11px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button id="symBtn"><span id="symTxt">BTC/USDT</span> ▾</button>
+    <div id="price">—</div>
+    <div id="chg"></div>
+    <span id="live" title="اتصال زنده"></span>
+  </header>
+  <div id="tfs"></div>
+  <div id="chips"></div>
+  <div id="legend"></div>
+  <div id="wrap">
+    <div id="chart"></div>
+    <div id="rsi"></div>
+    <div id="measure"></div>
+    <div id="evt"></div>
+    <div id="load">⏳ در حال دریافت کندل‌ها...</div>
+  </div>
+  <div id="pp">
+    <div id="ppHead"></div>
+    <div id="ppBody"></div>
+  </div>
+  <div id="alertbar"><span id="alertTxt"></span><button id="alOk">✅ ثبت</button><button id="alNo">لغو</button></div>
+  <nav id="tools">
+    <button data-tool="none" class="on"><i>👆</i>مکان‌نما</button>
+    <button id="bPos"><i>📡</i>پوزیشن</button>
+    <button data-tool="h"><i>➖</i>خط افقی</button>
+    <button data-tool="t"><i>📈</i>خط روند</button>
+    <button data-tool="m"><i>📏</i>اندازه</button>
+    <button data-tool="rr"><i>🎯</i>ریسک/ریوارد</button>
+    <button data-tool="al"><i>🔔</i>هشدار</button>
+    <button id="bInd"><i>⚙️</i>اندیکاتور</button>
+    <button id="bUndo"><i>↩️</i>برگشت</button>
+    <button id="bClear"><i>🗑</i>پاک‌کردن</button>
+    <button id="bLast"><i>⏩</i>آخرین</button>
+  </nav>
+</div>
+<div id="toast"></div>
+
+<div class="sheet" id="symSheet"><div class="card">
+  <h3>انتخاب ارز</h3>
+  <div class="grid" id="coinGrid"></div>
+  <input type="text" id="symInput" placeholder="نماد دلخواه، مثلاً LINK" autocapitalize="characters">
+  <button id="symGo" style="width:100%;margin-top:10px">برو ✅</button>
+</div></div>
+
+<div class="sheet" id="indSheet"><div class="card">
+  <h3>اندیکاتورها</h3>
+  <div class="row"><span>EMA 20</span><input type="checkbox" data-ind="ema20"></div>
+  <div class="row"><span>EMA 50</span><input type="checkbox" data-ind="ema50"></div>
+  <div class="row"><span>بولینگر (20, 2)</span><input type="checkbox" data-ind="bb"></div>
+  <div class="row"><span>حجم</span><input type="checkbox" data-ind="vol"></div>
+  <div class="row"><span>RSI (14)</span><input type="checkbox" data-ind="rsi"></div>
+</div></div>
+
+<div class="sheet" id="cfSheet"><div class="card">
+  <h3 id="cfTitle"></h3>
+  <div id="cfBody"></div>
+  <div class="two"><button id="cfNo">↩️ انصراف</button><button id="cfOk" class="on">✅ تأیید</button></div>
+</div></div>
+
+<script>
+(() => {
+'use strict';
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) {
+  try { tg.ready(); tg.expand(); tg.setHeaderColor('#000000'); tg.setBackgroundColor('#000000'); } catch (e) {}
+  try { tg.setBottomBarColor && tg.setBottomBarColor('#0a0c10'); } catch (e) {}
+  try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}   // کشیدن چارت، مینی‌اپ رو نبنده
+}
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+const BASES = ['https://data-api.binance.vision', 'https://api.binance.com', 'https://api1.binance.com'];
+const WSS = ['wss://stream.binance.com:9443/stream?streams=', 'wss://data-stream.binance.vision/stream?streams='];
+const COINS = ['BTC','ETH','BNB','SOL','XRP','DOGE','ADA','TON','AVAX','LINK','DOT','TRX','LTC','SHIB','PEPE','NEAR','APT','ARB','OP','SUI'];
+const TFS = ['1m','5m','15m','1h','4h','1d'];
+const TF_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
+const UP = '#22d3a0', DN = '#ff5470';
+const STEP = 33.5;                       // هر مرحله سیو سود (٪ مسیر تارگت و ٪ دارایی)
+const OFF = -new Date().getTimezoneOffset() * 60;   // نمایش ساعت محلی
+
+// ---------- پوزیشن‌های ربات (از آدرس)
+const Q = new URLSearchParams(location.search);
+const clean = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/USDT$/, '');
+const nn = v => (v === null || v === undefined || v === '') ? null : (isFinite(+v) ? +v : null);
+let POS = [], pi = 0;
+try {
+  const raw = Q.get('pos');
+  if (raw) {
+    let s = raw.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '=';
+    POS = JSON.parse(atob(s)).map(x => ({
+      id: x.i, coin: clean(x.c), side: x.s === 'S' ? 'short' : 'long', entry: +x.e, target: +x.t,
+      stop: nn(x.sl), orig: nn(x.os) != null ? nn(x.os) : nn(x.sl), left: nn(x.l) == null ? 1 : +x.l,
+      saved: x.ts || 0, real: +x.r || 0, qty: +x.q, cap: +x.cap, lev: +x.lev || 1,
+    })).filter(p => p.coin && p.entry && p.target && p.qty && p.cap);
+  }
+} catch (e) { POS = []; }
+if (!POS.length && nn(Q.get('entry')) && nn(Q.get('target'))) {        // سازگاری با لینک قدیمی (فقط نمایش)
+  const e = +Q.get('entry'), cap = nn(Q.get('cap')) || 100, lev = nn(Q.get('lev')) || 1;
+  POS = [{id: null, coin: clean(Q.get('coin') || 'BTC'), side: Q.get('side') === 'short' ? 'short' : 'long', entry: e,
+          target: +Q.get('target'), stop: nn(Q.get('stop')), orig: nn(Q.get('stop')), left: 1, saved: 0, real: 0,
+          qty: cap * lev / e, cap, lev}];
+}
+
+let sym = clean(Q.get('coin')) || (POS[0] && POS[0].coin) || clean(store.get('sym', 'BTC')) || 'BTC';
+let tf = Q.get('tf') || store.get('tf', '15m');
+if (!TFS.includes(tf)) tf = '15m';
+const ind = Object.assign({ema20: true, ema50: true, bb: false, vol: true, rsi: false}, store.get('ind', {}));
+let data = [], prec = 2;
+
+// ---------- helpers
+const f = p => p == null ? '—' : p.toLocaleString('en-US', {minimumFractionDigits: prec, maximumFractionDigits: prec});
+const fq = x => String(+x.toPrecision(6));
+const sgn = x => (x >= 0 ? '+' : '') + x.toFixed(2);
+function toast(msg, ms = 2800) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', ms);
+}
+function haptic(kind) { try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(kind); } catch (e) {} }
+async function api(path) {
+  let err;
+  for (const b of BASES) {
+    try { const r = await fetch(b + path); if (!r.ok) throw new Error(r.status); return await r.json(); }
+    catch (e) { err = e; }
+  }
+  throw err;
+}
+function setPrec(p) {
+  prec = p >= 1000 ? 2 : p >= 1 ? 3 : p >= 0.1 ? 4 : p >= 0.01 ? 5 : 7;
+  candle.applyOptions({priceFormat: {type: 'price', precision: prec, minMove: Math.pow(10, -prec)}});
+}
+
+// ---------- charts
+const base = {
+  autoSize: true,
+  layout: {background: {type: 'solid', color: '#000000'}, textColor: '#8a90a2', fontSize: 11, fontFamily: 'system-ui,-apple-system,Segoe UI,Tahoma,sans-serif'},
+  grid: {vertLines: {color: '#0b0d12'}, horzLines: {color: '#10131a'}},
+  crosshair: {mode: LightweightCharts.CrosshairMode.Normal,
+    vertLine: {color: '#3a4156', labelBackgroundColor: '#1b2236'}, horzLine: {color: '#3a4156', labelBackgroundColor: '#1b2236'}},
+  rightPriceScale: {borderColor: '#141824', scaleMargins: {top: 0.08, bottom: 0.2}},
+};
+const chart = LightweightCharts.createChart($('chart'), Object.assign({}, base, {
+  timeScale: {borderColor: '#141824', timeVisible: true, secondsVisible: false, rightOffset: 6, barSpacing: 8},
+  kineticScroll: {touch: true, mouse: false},
+  watermark: {visible: true, text: '', color: '#ffffff0d', fontSize: 44, horzAlign: 'center', vertAlign: 'center'},
+}));
+const candle = chart.addCandlestickSeries({upColor: UP, downColor: DN, borderVisible: false, wickUpColor: UP, wickDownColor: DN});
+const vol = chart.addHistogramSeries({priceFormat: {type: 'volume'}, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false});
+chart.priceScale('vol').applyOptions({scaleMargins: {top: 0.86, bottom: 0}});
+const lineOpt = (color, w = 2) => ({color, lineWidth: w, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false});
+const e20 = chart.addLineSeries(lineOpt('#ffb74d', 1.5));
+const e50 = chart.addLineSeries(lineOpt('#5aa9ff', 1.5));
+const bbU = chart.addLineSeries(lineOpt('#9575cd', 1));
+const bbM = chart.addLineSeries(lineOpt('#9575cd55', 1));
+const bbL = chart.addLineSeries(lineOpt('#9575cd', 1));
+
+const rchart = LightweightCharts.createChart($('rsi'), Object.assign({}, base, {
+  rightPriceScale: {borderColor: '#141824', scaleMargins: {top: 0.1, bottom: 0.1}},
+  timeScale: {visible: false}, handleScroll: false, handleScale: false,
+}));
+const rs = rchart.addLineSeries({color: '#b39ddb', lineWidth: 2, priceLineVisible: false});
+rs.createPriceLine({price: 70, color: '#ff547088', lineWidth: 1, lineStyle: 2, axisLabelVisible: false});
+rs.createPriceLine({price: 30, color: '#22d3a088', lineWidth: 1, lineStyle: 2, axisLabelVisible: false});
+chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && ind.rsi) rchart.timeScale().setVisibleLogicalRange(r); });
+
+// ---------- اندیکاتورها (کامل برای setData، افزایشی برای هر تیک → سریع)
+let a20 = [], a50 = [], rG = [], rL = [];
+const emaVals = (d, n) => { const k = 2 / (n + 1), o = new Array(d.length); let e = d[0].close;
+  for (let i = 0; i < d.length; i++) { e = i ? d[i].close * k + e * (1 - k) : d[i].close; o[i] = e; } return o; };
+function bbAt(i, n = 20, m = 2) {
+  let s = 0; for (let j = i - n + 1; j <= i; j++) s += data[j].close;
+  const mean = s / n; let v = 0; for (let j = i - n + 1; j <= i; j++) v += (data[j].close - mean) ** 2;
+  const sd = Math.sqrt(v / n); return {u: mean + m * sd, m: mean, l: mean - m * sd};
+}
+function rsiFull() {
+  const n = 14, out = []; rG = []; rL = [];
+  if (data.length <= n) return out;
+  let g = 0, l = 0;
+  for (let i = 1; i <= n; i++) { const x = data[i].close - data[i - 1].close; if (x >= 0) g += x; else l -= x; }
+  g /= n; l /= n; rG[n] = g; rL[n] = l;
+  out.push({time: data[n].time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l)});
+  for (let i = n + 1; i < data.length; i++) {
+    const x = data[i].close - data[i - 1].close;
+    g = (g * (n - 1) + Math.max(x, 0)) / n; l = (l * (n - 1) + Math.max(-x, 0)) / n; rG[i] = g; rL[i] = l;
+    out.push({time: data[i].time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l)});
+  }
+  return out;
+}
+function fullInd() {
+  if (!data.length) return;
+  a20 = emaVals(data, 20); a50 = emaVals(data, 50);
+  e20.setData(data.map((c, i) => ({time: c.time, value: a20[i]})));
+  e50.setData(data.map((c, i) => ({time: c.time, value: a50[i]})));
+  const U = [], M = [], L = [];
+  for (let i = 19; i < data.length; i++) { const b = bbAt(i); U.push({time: data[i].time, value: b.u}); M.push({time: data[i].time, value: b.m}); L.push({time: data[i].time, value: b.l}); }
+  bbU.setData(U); bbM.setData(M); bbL.setData(L);
+  if (ind.rsi) rs.setData(rsiFull());
+}
+function tailInd() {
+  const n = data.length, i = n - 1; if (!n) return; const c = data[i];
+  const ema = (arr, k) => { arr[i] = i ? c.close * k + arr[i - 1] * (1 - k) : c.close; arr.length = n; return arr[i]; };
+  e20.update({time: c.time, value: ema(a20, 2 / 21)});
+  e50.update({time: c.time, value: ema(a50, 2 / 51)});
+  if (n >= 20) { const b = bbAt(i); bbU.update({time: c.time, value: b.u}); bbM.update({time: c.time, value: b.m}); bbL.update({time: c.time, value: b.l}); }
+  if (ind.rsi && n > 14 && rG[i - 1] != null) {
+    const x = c.close - data[i - 1].close;
+    const g = (rG[i - 1] * 13 + Math.max(x, 0)) / 14, l = (rL[i - 1] * 13 + Math.max(-x, 0)) / 14;
+    rG[i] = g; rL[i] = l; rs.update({time: c.time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l)});
+  }
+}
+function applyVis() {
+  e20.applyOptions({visible: ind.ema20}); e50.applyOptions({visible: ind.ema50});
+  [bbU, bbM, bbL].forEach(s => s.applyOptions({visible: ind.bb}));
+  vol.applyOptions({visible: ind.vol});
+  $('rsi').style.display = ind.rsi ? 'block' : 'none';
+  document.querySelectorAll('[data-ind]').forEach(c => c.checked = !!ind[c.dataset.ind]);
+}
+
+// ---------- دیتا + زنده
+async function load() {
+  stopLive(); wipeObjs(); clearTmp(); clearMeasure();
+  chart.applyOptions({watermark: {text: sym + ' · ' + tf}});
+  $('load').style.display = 'flex';
+  const k0 = POS.findIndex(p => p.coin === sym); if (k0 >= 0) pi = k0;
+  try {
+    const k = await api(`/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=720`);
+    data = k.map(x => ({time: Math.floor(x[0] / 1000) + OFF, open: +x[1], high: +x[2], low: +x[3], close: +x[4], vol: +x[5]}));
+    setPrec(data[data.length - 1].close);
+    candle.setData(data.map(({time, open, high, low, close}) => ({time, open, high, low, close})));
+    vol.setData(data.map(d => ({time: d.time, value: d.vol, color: d.close >= d.open ? '#22d3a033' : '#ff547033'})));
+    fullInd(); applyVis(); restore(); drawBot();
+    chart.timeScale().setVisibleLogicalRange({from: Math.max(0, data.length - 90), to: data.length + 6});
+    onPrice(data[data.length - 1].close, true);
+    buildChips(); buildPanel();
+    startLive(); loadTicker();
+  } catch (e) {
+    toast('❌ دریافت کندل‌ها ممکن نشد؛ فیلترشکن رو چک کن');
+  }
+  $('load').style.display = 'none';
+}
+async function loadTicker() {
+  try {
+    const t = await api(`/api/v3/ticker/24hr?symbol=${sym}USDT`);
+    const c = +t.priceChangePercent; const el = $('chg');
+    el.textContent = sgn(c) + '%'; el.className = c >= 0 ? 'g' : 'r';
+  } catch (e) {}
+}
+let lastShown = null;
+function header(p) {
+  $('symTxt').textContent = sym + '/USDT'; $('price').textContent = f(p);
+  if (lastShown != null && p !== lastShown) $('price').style.color = p > lastShown ? UP : DN;
+  lastShown = p;
+}
+function onPrice(p, force) { header(p); updatePanel(p, force); }
+
+function applyCandle(c, isTick) {
+  const last = data[data.length - 1];
+  if (last && c.time === last.time) data[data.length - 1] = c;
+  else if (!last || c.time > last.time) data.push(c);
+  else return;
+  candle.update({time: c.time, open: c.open, high: c.high, low: c.low, close: c.close});
+  if (!isTick) vol.update({time: c.time, value: c.vol, color: c.close >= c.open ? '#22d3a033' : '#ff547033'});
+  tailInd(); onPrice(c.close);
+}
+// تیک‌های aggTrade با requestAnimationFrame جمع میشن تا موبایل روون بمونه
+let tickP = null, tickT = 0, raf = 0;
+function onTick(p, t) { tickP = p; tickT = t; if (!raf) raf = requestAnimationFrame(flush); }
+function flush() {
+  raf = 0; const p = tickP; tickP = null;
+  const last = data[data.length - 1]; if (p == null || !last) return;
+  if (tickT >= last.time + TF_SEC[tf]) return;       // کندل جدید از استریم kline میاد
+  applyCandle({time: last.time, open: last.open, high: Math.max(last.high, p), low: Math.min(last.low, p), close: p, vol: last.vol}, true);
+}
+
+let ws = null, poll = null, wsTimer = null;
+function stopLive() {
+  clearTimeout(wsTimer); clearInterval(poll); poll = null;
+  if (ws) { const w = ws; ws = null; try { w.close(); } catch (e) {} }
+  $('live').className = '';
+}
+function startLive() { stopLive(); connectWS(0); }
+function connectWS(i) {
+  if (i >= WSS.length) { startPoll(); return; }
+  let got = false; const s = sym.toLowerCase() + 'usdt';
+  const w = new WebSocket(WSS[i] + `${s}@kline_${tf}/${s}@aggTrade`);
+  ws = w;
+  const to = setTimeout(() => { if (!got) { try { w.close(); } catch (e) {} } }, 7000);
+  w.onmessage = e => {
+    got = true; clearInterval(poll); poll = null; $('live').className = 'ok';
+    let m; try { m = JSON.parse(e.data).data; } catch (x) { return; }
+    if (!m) return;
+    if (m.e === 'kline') { const k = m.k; applyCandle({time: Math.floor(k.t / 1000) + OFF, open: +k.o, high: +k.h, low: +k.l, close: +k.c, vol: +k.v}); }
+    else if (m.e === 'aggTrade') onTick(+m.p, Math.floor(m.T / 1000) + OFF);
+  };
+  w.onerror = () => { try { w.close(); } catch (e) {} };
+  w.onclose = () => {
+    clearTimeout(to);
+    if (ws !== w) return;
+    if (!got) connectWS(i + 1);
+    else { startPoll(); wsTimer = setTimeout(() => connectWS(0), 8000); }
+  };
+}
+function startPoll() {
+  if (poll) return;
+  $('live').className = '';
+  const once = async () => {
+    try {
+      const k = await api(`/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=3`);
+      k.forEach(x => applyCandle({time: Math.floor(x[0] / 1000) + OFF, open: +x[1], high: +x[2], low: +x[3], close: +x[4], vol: +x[5]}));
+    } catch (e) {}
+  };
+  once(); poll = setInterval(once, 2000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && data.length) { startLive(); } });
+setInterval(loadTicker, 30000);
+
+// ---------- لجند کراس‌هر
+chart.subscribeCrosshairMove(p => {
+  const d = p.seriesData && p.seriesData.get(candle);
+  if (!d) { $('legend').textContent = ''; return; }
+  const ch = (d.close - d.open) / d.open * 100;
+  $('legend').innerHTML = `O ${f(d.open)}  H ${f(d.high)}  L ${f(d.low)}  C ${f(d.close)}  <b class="${ch >= 0 ? 'g' : 'r'}">${sgn(ch)}%</b>`;
+});
+
+// =====================================================================
+//                      اندیکاتور پوزیشن ربات
+// =====================================================================
+const dirOf = p => p.side === 'long' ? 1 : -1;
+const levels = p => [p.entry + (p.target - p.entry) * STEP / 100, p.entry + (p.target - p.entry) * 2 * STEP / 100, p.target];
+function progress(p, pr) {
+  const d = dirOf(p), tdist = (p.target - p.entry) * d;
+  const prog = tdist ? (pr - p.entry) * d / tdist * 100 : 0;
+  let used = 0;
+  if (p.orig) { const sd = (p.entry - p.orig) * d; if (sd > 0) used = Math.max(0, (p.entry - pr) * d / sd * 100); }
+  return {prog, used};
+}
+const guarded = p => !!p.stop && p.stop === p.orig;
+const liqOf = p => p.lev > 1 ? p.entry * (1 - dirOf(p) / p.lev) : null;
+function stateKey(p, pr) {
+  const d = dirOf(p), {prog, used} = progress(p, pr);
+  if (p.stop && (pr - p.stop) * d <= 0) return 'stop';
+  if (prog >= 100) return 'tp3';
+  if (prog >= 2 * STEP && p.saved < 2) return 'tp2';
+  if (prog >= STEP && p.saved < 1) return 'tp1';
+  if (guarded(p)) { if (used >= 80) return 'sw80'; if (used >= 50) return 'sw50'; }
+  const lq = liqOf(p);
+  if (lq && (pr - (p.entry + 0.8 * (lq - p.entry))) * d <= 0) return 'liq';
+  return null;
+}
+
+// --- تحلیل ۴ساعته (همون منطق ربات)
+const techC = {};
+async function getTech(coin) {
+  const c = techC[coin]; if (c && Date.now() - c.ts < 120000) return c.t;
+  const k = await api(`/api/v3/klines?symbol=${coin}USDT&interval=4h&limit=120`);
+  const kl = k.map(x => [+x[2], +x[3], +x[4]]);
+  const closes = kl.map(x => x[2]);
+  const ema = (v, n) => { const kk = 2 / (n + 1); let e = v[0]; for (let i = 1; i < v.length; i++) e = v[i] * kk + e * (1 - kk); return e; };
+  let g = 0, l = 0; for (let i = closes.length - 14; i < closes.length; i++) { const x = closes[i] - closes[i - 1]; g += Math.max(x, 0); l += Math.max(-x, 0); }
+  const trs = []; for (let i = 1; i < kl.length; i++) trs.push(Math.max(kl[i][0] - kl[i][1], Math.abs(kl[i][0] - kl[i - 1][2]), Math.abs(kl[i][1] - kl[i - 1][2])));
+  const highs = [], lows = [];
+  for (let i = 3; i < kl.length - 3; i++) {
+    const seg = kl.slice(i - 3, i + 4);
+    if (kl[i][0] === Math.max(...seg.map(x => x[0]))) highs.push(kl[i][0]);
+    if (kl[i][1] === Math.min(...seg.map(x => x[1]))) lows.push(kl[i][1]);
+  }
+  const t = {highs, lows, hi: Math.max(...kl.map(x => x[0])), lo: Math.min(...kl.map(x => x[1])),
+    rsi: l === 0 ? 100 : 100 - 100 / (1 + g / l), ema20: ema(closes.slice(-60), 20), ema50: ema(closes, 50), atr: trs.slice(-14).reduce((a, b) => a + b, 0) / 14};
+  techC[coin] = {t, ts: Date.now()}; return t;
+}
+function nearest(t, pr) {
+  const res = t.highs.filter(h => h > pr * 1.002).sort((a, b) => a - b), sup = t.lows.filter(x => x < pr * 0.998).sort((a, b) => b - a);
+  return {res: res[0] || t.hi, sup: sup[0] || t.lo};
+}
+// توصیه منطقی با توجه به مقاومت/حمایت، RSI و روند
+function situation(p, t, pr, key) {
+  const d = dirOf(p), L = [];
+  if (!t) return ['تحلیل تکنیکال در دسترس نیست؛ طبق پلن عمل کن'];
+  const {res, sup} = nearest(t, pr), r = t.rsi, av = t.atr;
+  const withTrend = (t.ema20 > t.ema50) === (d === 1);
+  const ahead = d === 1 ? res : sup, behind = d === 1 ? sup : res;
+  const nA = d === 1 ? 'مقاومت' : 'حمایت', nB = d === 1 ? 'حمایت' : 'مقاومت';
+  const nearA = Math.abs(ahead - pr) < 0.7 * av, nearB = Math.abs(pr - behind) < 0.7 * av;
+  const extreme = d === 1 ? r > 70 : r < 30, exhausted = d === 1 ? r < 35 : r > 65;
+  if (key === 'tp1' || key === 'tp2' || key === 'tp3') {
+    if (nearA) L.push(`🧱 نزدیک ${nA} ${f(ahead)}؛ احتمال برگشت زیاده، سیو کردن منطقیه`);
+    if (extreme) L.push(`🔥 RSI ${r.toFixed(0)} اشباعه؛ سیو سود رو حتماً انجام بده`);
+    if (!withTrend) L.push('⚠️ خلاف روند ۴ساعته‌ای؛ می‌تونی سهم بیشتری (تا ۵۰٪) سیو کنی');
+    if (!L.length) L.push('📈 روند همراهته و مانع نزدیکی نیست؛ فقط سهم برنامه رو سیو کن و بقیه رو با استاپ بالاتر نگه دار');
+  } else if (key === 'sw50' || key === 'sw80') {
+    if (nearB && exhausted) L.push(`🧊 نزدیک ${nB} ${f(behind)} و RSI ${r.toFixed(0)}؛ احتمال برگشت هست ولی حد ضرر رو دورتر نبر`);
+    else if (nearB) L.push(`🛡 نزدیک ${nB} ${f(behind)}؛ اگه کندل ۴ساعته اون رو بشکنه، سریع‌تر خارج شو`);
+    if (!withTrend) L.push('⚠️ روند ۴ساعته خلاف پوزیشنته؛ احتمال خوردن حد ضرر بیشتره');
+    if (key === 'sw80') L.push('🚨 خیلی نزدیکه؛ یا الان ببند یا بذار استاپ کار خودش رو بکنه، جابجاش نکن');
+    else if (!L.length) L.push('⏳ هنوز دلیل ورودت باطل نشده؛ حد ضرر رو دست نزن و صبر کن');
+  } else if (key === 'stop') L.push('❌ از پلن خارج نشو؛ ببند و دنبال ستاپ بعدی باش');
+  else if (key === 'liq') L.push('⚙️ بخشی از پوزیشن رو ببند یا مارجین اضافه کن');
+  else {
+    L.push(withTrend ? '✅ هم‌جهت با روند ۴ساعته' : '⚠️ خلاف روند ۴ساعته‌ای؛ احتیاط کن');
+    L.push(`🧱 ${nA} جلوت: ${f(ahead)} (${sgn((ahead - pr) / pr * 100 * d)}%) • 🛡 ${nB} پشتت: ${f(behind)}`);
+    L.push(extreme ? `🔥 RSI ${r.toFixed(0)} اشباعه؛ نزدیک سیو‌ها حواست باشه` : exhausted ? `🧊 RSI ${r.toFixed(0)}؛ فشار برگشتی کمه` : `😐 RSI ${r.toFixed(0)} خنثی`);
+    if (p.stop && p.orig) { const risk = Math.abs(p.entry - p.orig); if (risk) L.push(`⚖️ ریسک به ریوارد 1 به ${(Math.abs(p.target - p.entry) / risk).toFixed(1)}`); }
+    L.push('⏳ هنوز رویدادی نیست؛ طبق پلن صبر کن');
+  }
+  return L;
+}
+
+// --- رویدادها (بنر داخل اپ)
+const fired = store.get('fired', {});
+const EVT = {
+  tp1: ['win', n => `✂️ مرحله ۱ سیو سود رسید`, p => `${STEP}% از دارایی (${fq(p.qty * STEP / 100)} ${p.coin}) رو خارج کن و استاپ رو ببر روی ورود`],
+  tp2: ['win', n => `✂️ مرحله ۲ سیو سود رسید`, p => `${STEP}% دیگه (${fq(p.qty * STEP / 100)} ${p.coin}) رو خارج کن و استاپ رو ببر روی TP1`],
+  tp3: ['win', n => `🎯 تارگت خورد!`, p => `باقی‌مانده رو ببند یا بخش کوچیکی رو با استاپ ترلینگ نگه دار`],
+  stop: ['bad', n => `🛑 حد ضرر خورد`, p => `پوزیشن رو ببند و ضرر رو بپذیر؛ نذار بزرگ‌تر بشه`],
+  sw50: ['warn', n => `⚠️ ${n.toFixed(0)}% از حد ضرر پر شده`, p => `قیمت داره به حد ضرر نزدیک میشه`],
+  sw80: ['bad', n => `🚨 ${n.toFixed(0)}% از حد ضرر پر شده!`, p => `خیلی نزدیکه، تصمیمت رو بگیر`],
+  liq: ['bad', n => `💀 نزدیک لیکوئید!`, p => `لیکوئید: ${f(liqOf(p))}`],
+};
+let evtTimer = 0;
+function showEvt(p, key, used) {
+  const [cls, t, s] = EVT[key], el = $('evt');
+  el.className = cls; el.style.display = 'block';
+  el.innerHTML = `<b>${t(used)} — ${p.coin} ${p.side === 'long' ? 'Long' : 'Short'}</b>${s(p)}<div style="opacity:.6;font-size:11px">برای بستن بزن</div>`;
+  haptic(cls === 'win' ? 'success' : cls === 'warn' ? 'warning' : 'error');
+  clearTimeout(evtTimer); evtTimer = setTimeout(() => el.style.display = 'none', 14000);
+}
+$('evt').onclick = () => { $('evt').style.display = 'none'; $('pp').classList.add('open'); };
+function checkEvents(p, pr, key, used) {
+  const id = String(p.id != null ? p.id : 'x') + ':';
+  if (used < 25) { delete fired[id + 'sw50']; delete fired[id + 'sw80']; }
+  if (key && !fired[id + key]) {
+    fired[id + key] = 1;
+    if (key === 'sw80') fired[id + 'sw50'] = 1;
+    store.set('fired', fired);
+    showEvt(p, key, used);
+  }
+}
+
+// --- خطوط روی چارت
+let botLines = [];
+function drawBot() {
+  botLines.forEach(l => { try { candle.removePriceLine(l); } catch (e) {} }); botLines = [];
+  const p = cur(); if (!p) return;
+  const lv = levels(p);
+  const add = (price, color, title, style, w) => botLines.push(candle.createPriceLine({price, color, lineWidth: w || 2, lineStyle: style || 0, axisLabelVisible: true, title}));
+  add(p.entry, '#ffd24a', (p.side === 'long' ? 'LONG ' : 'SHORT ') + p.lev + 'x');
+  add(lv[0], p.saved >= 1 ? '#3b6b5c' : '#69f0ae', p.saved >= 1 ? 'TP1 ✓' : 'TP1 ✂', 2, 1);
+  add(lv[1], p.saved >= 2 ? '#3b6b5c' : '#69f0ae', p.saved >= 2 ? 'TP2 ✓' : 'TP2 ✂', 2, 1);
+  add(lv[2], '#00e676', 'TARGET 🎯');
+  if (p.stop) add(p.stop, '#ff1744', p.stop === p.entry ? 'STOP 🔒' : 'STOP');
+  const lq = liqOf(p); if (lq) add(lq, '#b71c1c', 'LIQ', 1, 1);
+}
+
+// --- پنل
+const cur = () => (POS[pi] && POS[pi].coin === sym) ? POS[pi] : null;
+let lastKey = undefined, advTok = 0;
+function buildChips() {
+  const el = $('chips');
+  if (!POS.length) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = POS.map((p, i) => `<button data-pi="${i}" class="${i === pi && p.coin === sym ? 'on' : ''}">${p.side === 'long' ? '🟢' : '🔴'} ${p.coin} ${p.side === 'long' ? 'L' : 'S'} ${p.lev > 1 ? p.lev + 'x' : ''}</button>`).join('');
+  el.querySelectorAll('[data-pi]').forEach(b => b.onclick = () => {
+    pi = +b.dataset.pi; const p = POS[pi];
+    if (p.coin !== sym) { sym = p.coin; store.set('sym', sym); load(); } else { drawBot(); buildChips(); buildPanel(); }
+  });
+}
+function buildPanel() {
+  const p = cur(), pp = $('pp'); lastKey = undefined;
+  if (!p) { pp.style.display = 'none'; return; }
+  pp.style.display = 'block';
+  const lv = levels(p), canAct = p.id != null, mxStep = Math.min(STEP / 100, p.left);
+  $('ppBody').innerHTML = `
+    <div class="kv"><span>ورود</span><b class="num">${f(p.entry)}</b><span>الان</span><b class="num" id="pNow">—</b></div>
+    <div class="kv"><span>حجم باقی‌مانده</span><b class="num">${(p.left * 100).toFixed(0)}% (${fq(p.qty * p.left)} ${p.coin})</b><span>سیو‌شده</span><b class="num ${p.real >= 0 ? 'g' : 'r'}">${p.real >= 0 ? '+' : ''}${p.real.toFixed(2)}$</b></div>
+    <div class="bl"><span>🎯 مسیر تا تارگت</span><b class="num" id="pProgT"></b></div>
+    <div class="bar"><i class="gb" id="pProgB"></i><s style="left:${STEP}%"></s><s style="left:${2 * STEP}%"></s></div>
+    <div class="bl"><span id="pStopL">🛑 حد ضرر</span><b class="num" id="pStopT"></b></div>
+    <div class="bar" id="stopBar"><i class="rb" id="pStopB"></i><s style="left:50%"></s><s style="left:80%"></s></div>
+    <div style="margin-top:8px">
+      ${lv.map((x, i) => `<div class="lv ${p.saved > i ? 'done' : ''}" id="lv${i}"><span>${i < 2 ? '✂️ TP' + (i + 1) + ' (' + (STEP * (i + 1)).toFixed(i ? 0 : 1) + '%)' : '🎯 تارگت'}</span><b class="num">${f(x)}</b><em class="num" id="ld${i}"></em></div>`).join('')}
+    </div>
+    <div class="next" id="pNext"></div>
+    <div class="adv"><h4>🧠 کار منطقی الان چیه؟</h4><div id="pAdv">⏳ در حال تحلیل...</div></div>
+    <div class="acts">
+      <button class="go" id="aPart" ${canAct && p.saved < 3 ? '' : 'disabled'}>✂️ سیو شد</button>
+      <button id="aSL" ${canAct && p.stop !== p.entry ? '' : 'disabled'}>🔒 استاپ = ورود</button>
+      <button class="danger" id="aClose" ${canAct ? '' : 'disabled'}>❌ بستن</button>
+    </div>
+    <div class="hint">${canAct ? 'دکمه‌ها فقط وضعیت داخل ربات رو آپدیت می‌کنن؛ توی صرافی هم خودت اجرا کن.' : 'این نمای فقط‌خوانده؛ برای دکمه‌ها از «🕯 چارت زنده» پایین چت ربات باز کن.'}</div>`;
+  $('ppHead').onclick = () => $('pp').classList.toggle('open');
+  if (canAct) {
+    $('aPart').onclick = () => {
+      const pr = last(), d = dirOf(p), frac = Math.min(STEP / 100, p.left), usd = p.qty * frac * (pr - p.entry) * d;
+      const ns = p.saved === 0 ? p.entry : levels(p)[Math.min(p.saved - 1, 1)];
+      ask('✂️ ثبت سیو سود', `<p>${(frac * 100).toFixed(1)}% از دارایی (<b class="num">${fq(p.qty * frac)} ${p.coin}</b>) با قیمت <b class="num">${f(pr)}</b></p>
+        <p>سود این بخش: <b class="num ${usd >= 0 ? 'g' : 'r'}">${usd >= 0 ? '+' : ''}${usd.toFixed(2)}$</b></p>
+        <p>حد ضرر جدید: <b class="num">${f(ns)}</b></p>
+        <p style="color:var(--mut);font-size:12px">بعد از ثبت، مینی‌اپ بسته میشه و نتیجه توی چت میاد.</p>`, () => sendBot({t: 'part', id: p.id}));
+    };
+    $('aSL').onclick = () => ask('🔒 حد ضرر روی ورود', `<p>حد ضرر ${p.coin} بره روی <b class="num">${f(p.entry)}</b> (ریسک‌فری)؟</p>`, () => sendBot({t: 'sl', id: p.id, price: p.entry}));
+    $('aClose').onclick = () => {
+      const pr = last(), d = dirOf(p), total = p.qty * p.left * (pr - p.entry) * d + p.real;
+      ask('❌ بستن پوزیشن', `<p>${p.coin} ${p.side === 'long' ? 'Long' : 'Short'} با قیمت لحظه‌ای <b class="num">${f(pr)}</b> بسته بشه؟</p>
+        <p>نتیجه کل: <b class="num ${total >= 0 ? 'g' : 'r'}">${total >= 0 ? '+' : ''}${total.toFixed(2)}$ (${sgn(total / p.cap * 100)}%)</b></p>
+        <p style="color:var(--mut);font-size:12px">فقط توی ربات بسته میشه؛ توی صرافی هم ببندش.</p>`, () => sendBot({t: 'close', id: p.id}));
+    };
+  }
+  onPrice(last(), true);
+}
+const last = () => data.length ? data[data.length - 1].close : null;
+
+function updatePanel(price, force) {
+  const p = cur(); if (!p || price == null) return;
+  const d = dirOf(p), {prog, used} = progress(p, price), lv = levels(p);
+  const total = p.qty * p.left * (price - p.entry) * d + p.real, pct = total / p.cap * 100;
+  const key = stateKey(p, price);
+  const dot = key === 'stop' || key === 'sw80' || key === 'liq' ? '🚨' : key === 'sw50' ? '⚠️' : key ? '✂️' : '';
+  $('ppHead').innerHTML = `<span>${d === 1 ? '🟢' : '🔴'} <b>${p.coin}</b> ${p.side === 'long' ? 'Long' : 'Short'}${p.lev > 1 ? ' ' + p.lev + 'x' : ''}</span>
+    <b class="num ${total >= 0 ? 'g' : 'r'}">${total >= 0 ? '+' : ''}${total.toFixed(2)}$ (${sgn(pct)}%)</b>
+    <span class="num">🎯 ${Math.max(prog, 0).toFixed(0)}%</span><span>${dot}</span><span class="sp"></span><i>▴</i>`;
+  const set = (id, v) => { const e = $(id); if (e && e.textContent !== v) e.textContent = v; };
+  if (!$('pNow')) return;
+  set('pNow', f(price));
+  set('pProgT', Math.max(prog, 0).toFixed(0) + '%');
+  $('pProgB').style.width = Math.min(100, Math.max(0, prog)) + '%';
+  const sb = $('stopBar'), sl = $('pStopL');
+  if (!p.stop) { sl.textContent = '🛑 بدون حد ضرر ❗'; set('pStopT', ''); sb.style.display = 'none'; }
+  else if (p.stop === p.entry) { sl.textContent = '🔒 ریسک‌فری (استاپ روی ورود)'; set('pStopT', f(p.stop)); sb.style.display = 'none'; }
+  else if (guarded(p)) { sl.textContent = '🛑 مصرف حد ضرر'; set('pStopT', used.toFixed(0) + '%  •  ' + f(p.stop)); sb.style.display = 'block'; $('pStopB').style.width = Math.min(100, used) + '%'; }
+  else { sl.textContent = '🛑 حد ضرر فعلی'; set('pStopT', f(p.stop)); sb.style.display = 'none'; }
+  lv.forEach((x, i) => {
+    const rem = (x - price) / price * 100 * d;
+    set('ld' + i, p.saved > i ? '✓ انجام شد' : (prog >= (i + 1) * STEP ? '✅ رسید' : sgn(rem) + '% مونده'));
+  });
+  // قدم بعدی
+  const nx = $('pNext');
+  if (p.saved >= 3 || p.left <= 0.01) nx.innerHTML = '🏁 همه مراحل ثبت شده';
+  else {
+    const i = Math.min(p.saved, 2), hot = prog >= (i + 1) * STEP;
+    nx.className = 'next' + (hot ? ' hot' : '');
+    const html = i < 2
+      ? `${hot ? '🔔 <b>الان وقت سیو کردنه:</b>' : '✂️ <b>قدم بعدی:</b>'} در <b class="num">${f(lv[i])}</b> ${STEP}% از دارایی (<b class="num">${fq(p.qty * STEP / 100)} ${p.coin}</b>) رو خارج کن و استاپ رو ببر روی ${i === 0 ? 'ورود' : 'TP1'}`
+      : `${hot ? '🎯 <b>تارگت رسید:</b>' : '🎯 <b>قدم آخر:</b>'} در <b class="num">${f(lv[2])}</b> باقی‌مانده (<b class="num">${fq(p.qty * p.left)} ${p.coin}</b>) رو ببند`;
+    if (nx.dataset.h !== html) { nx.dataset.h = html; nx.innerHTML = html; }
+  }
+  checkEvents(p, price, key, used);
+  if (force || key !== lastKey) { lastKey = key; renderAdvice(p, price, key); }
+}
+async function renderAdvice(p, pr, key) {
+  const tok = ++advTok; let t = null;
+  try { t = await getTech(p.coin); } catch (e) {}
+  if (tok !== advTok || !$('pAdv')) return;
+  $('pAdv').innerHTML = situation(p, t, pr, key).map(x => `<div>${x}</div>`).join('');
+}
+setInterval(() => { const p = cur(), pr = last(); if (p && pr) renderAdvice(p, pr, lastKey || null); }, 60000);
+
+// --- ارسال دستور به ربات
+function sendBot(obj) {
+  try {
+    if (!tg || !tg.sendData) throw new Error('no tg');
+    tg.sendData(JSON.stringify(obj));       // مینی‌اپ بعدش بسته میشه و ربات جواب میده
+  } catch (e) {
+    toast('این دکمه فقط وقتی کار می‌کنه که از «🕯 چارت زنده» پایین چت ربات بازش کنی', 5000);
+  }
+}
+let cfFn = null;
+function ask(title, html, fn) { $('cfTitle').textContent = title; $('cfBody').innerHTML = html; cfFn = fn; $('cfSheet').classList.add('open'); }
+$('cfOk').onclick = () => { $('cfSheet').classList.remove('open'); const fn = cfFn; cfFn = null; if (fn) fn(); };
+$('cfNo').onclick = () => { $('cfSheet').classList.remove('open'); cfFn = null; };
+$('bPos').onclick = () => {
+  if (!POS.length) { toast('پوزیشن فعالی نداری؛ توی ربات «📈 ثبت پوزیشن» رو بزن و اندیکاتور رو فعال کن', 4500); return; }
+  if (!cur()) { const k = POS.findIndex(x => x.coin === sym); pi = k >= 0 ? k : 0; if (POS[pi].coin !== sym) { sym = POS[pi].coin; store.set('sym', sym); load(); } }
+  $('pp').classList.toggle('open');
+};
+
+// =====================================================================
+//                              ترسیم‌ها
+// =====================================================================
+let objs = [], tmp = [], pend = [], tool = 'none', measureSeries = null, pendingAlert = null;
+const dkey = () => 'dr:' + sym;
+function build(it) {
+  const line = (p, color, title, style) => candle.createPriceLine({price: p, color, lineWidth: 1, lineStyle: style || 2, axisLabelVisible: true, title});
+  if (it.k === 'h') { const h = line(it.p, '#ffd24a', '—'); return () => candle.removePriceLine(h); }
+  if (it.k === 'al') { const h = line(it.p, '#42a5f5', '🔔'); return () => candle.removePriceLine(h); }
+  if (it.k === 't') {
+    const s = chart.addLineSeries({color: '#ffca28', lineWidth: 2, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false});
+    s.setData([{time: it.t1, value: it.p1}, {time: it.t2, value: it.p2}]);
+    return () => chart.removeSeries(s);
+  }
+  if (it.k === 'pos' || it.k === 'rr') {
+    const d = it.t > it.e ? 1 : -1;
+    const tp = (it.t - it.e) / it.e * 100 * d, sl = (it.s - it.e) / it.e * 100 * d;
+    const rr = Math.abs(it.t - it.e) / Math.abs(it.e - it.s);
+    const hs = [line(it.e, '#ffd24a', it.t > it.e ? 'LONG' : 'SHORT', 0),
+                line(it.t, '#00e676', `TP ${sgn(tp)}% (RR ${rr.toFixed(1)})`, 0),
+                line(it.s, '#ff1744', `SL ${sgn(sl)}%`, 0)];
+    return () => hs.forEach(h => candle.removePriceLine(h));
+  }
+  return () => {};
+}
+function addItem(it, save = true) { objs.push({it, rm: build(it)}); if (save) store.set(dkey(), objs.map(o => o.it)); }
+function restore() { (store.get(dkey(), []) || []).forEach(it => { try { addItem(it, false); } catch (e) {} }); }
+function wipeObjs() { objs.forEach(o => { try { o.rm(); } catch (e) {} }); objs = []; }
+function clearTmp() { tmp.forEach(h => { try { candle.removePriceLine(h); } catch (e) {} }); tmp = []; pend = []; }
+function clearMeasure() {
+  if (measureSeries) { try { chart.removeSeries(measureSeries); } catch (e) {} measureSeries = null; }
+  $('measure').style.display = 'none';
+}
+function hideAlertBar() { $('alertbar').style.display = 'none'; pendingAlert = null; }
+
+const HINTS = {
+  none: 'حالت مکان‌نما', h: 'روی چارت بزن تا خط افقی بیاد', t: 'نقطه اول خط روند رو بزن',
+  m: 'نقطه اول اندازه‌گیری رو بزن', rr: '🎯 ۱) قیمت ورود رو بزن', al: 'قیمت هشدار رو روی چارت بزن',
+};
+function setTool(t) {
+  tool = t; clearTmp(); hideAlertBar();
+  document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+  if (t !== 'none') toast(HINTS[t]);
+}
+document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+
+function fmtDur(sec) {
+  sec = Math.abs(sec);
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+  return (d ? d + ' روز ' : '') + (h ? h + ' ساعت ' : '') + (!d && m ? m + ' دقیقه' : '');
+}
+chart.subscribeClick(param => {
+  if (tool === 'none' || !param.point) return;
+  const price = candle.coordinateToPrice(param.point.y);
+  if (price == null) return;
+  let time = param.time;
+  if (time == null && chart.timeScale().coordinateToTime) time = chart.timeScale().coordinateToTime(param.point.x);
+  if (time == null) time = data[data.length - 1].time;
+
+  if (tool === 'h') { addItem({k: 'h', p: price}); setTool('none'); return; }
+  if (tool === 'al') {
+    pendingAlert = price;
+    const cur = data[data.length - 1].close;
+    $('alertTxt').textContent = `🔔 ${sym} روی ${f(price)} (${sgn((price - cur) / cur * 100)}% از قیمت فعلی)`;
+    $('alertbar').style.display = 'flex';
+    return;
+  }
+  pend.push({time, price});
+  tmp.push(candle.createPriceLine({price, color: '#ffffff', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: '•'}));
+  const need = tool === 'rr' ? 3 : 2;
+  if (pend.length < need) {
+    toast(tool === 'rr' ? (pend.length === 1 ? '🛑 ۲) حد ضرر رو بزن' : '🎯 ۳) تارگت رو بزن') : 'نقطه دوم رو بزن');
+    return;
+  }
+  const [a, b, c] = pend;
+  if (tool === 't') {
+    let [p1, p2] = a.time <= b.time ? [a, b] : [b, a];
+    if (p1.time === p2.time) { toast('دو نقطه باید روی دو کندل متفاوت باشن'); clearTmp(); return; }
+    addItem({k: 't', t1: p1.time, p1: p1.price, t2: p2.time, p2: p2.price});
+  } else if (tool === 'm') {
+    clearMeasure();
+    const [p1, p2] = a.time <= b.time ? [a, b] : [b, a];
+    if (p1.time !== p2.time) {
+      measureSeries = chart.addLineSeries({color: '#ffffff', lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false});
+      measureSeries.setData([{time: p1.time, value: p1.price}, {time: p2.time, value: p2.price}]);
+    }
+    const dp = b.price - a.price, pc = dp / a.price * 100, bars = Math.round(Math.abs(b.time - a.time) / TF_SEC[tf]);
+    const m = $('measure');
+    m.innerHTML = `<b class="${dp >= 0 ? 'g' : 'r'}">${dp >= 0 ? '+' : ''}${f(dp)} (${sgn(pc)}%)</b> • ${bars} کندل • ${fmtDur(b.time - a.time)}`;
+    m.style.display = 'block'; m.onclick = clearMeasure;
+  } else if (tool === 'rr') {
+    if ((b.price - a.price) * (c.price - a.price) >= 0) { toast('❗ حد ضرر و تارگت باید دو طرف ورود باشن'); clearTmp(); return; }
+    addItem({k: 'rr', e: a.price, s: b.price, t: c.price});
+  }
+  setTool('none');
+});
+
+$('alOk').onclick = () => {
+  if (pendingAlert == null) return;
+  const price = pendingAlert;
+  addItem({k: 'al', p: price});
+  hideAlertBar(); setTool('none');
+  sendBot({t: 'alert', coin: sym, price});
+};
+$('alNo').onclick = () => { hideAlertBar(); setTool('none'); };
+
+$('bUndo').onclick = () => {
+  if (!objs.length) { toast('چیزی برای برگشت نیست'); return; }
+  const o = objs.pop(); try { o.rm(); } catch (e) {}
+  store.set(dkey(), objs.map(x => x.it));
+};
+$('bClear').onclick = () => { wipeObjs(); clearTmp(); clearMeasure(); store.set(dkey(), []); toast('🗑 همه ترسیم‌های این ارز پاک شد'); };
+$('bLast').onclick = () => chart.timeScale().scrollToRealTime();
+
+// ---------- شیت‌ها
+function openSheet(id) { $(id).classList.add('open'); }
+document.querySelectorAll('.sheet').forEach(s => s.addEventListener('click', e => { if (e.target === s) s.classList.remove('open'); }));
+$('bInd').onclick = () => openSheet('indSheet');
+document.querySelectorAll('[data-ind]').forEach(c => c.onchange = () => {
+  ind[c.dataset.ind] = c.checked; store.set('ind', ind); applyVis();
+  if (c.dataset.ind === 'rsi' && c.checked) { fullInd(); const r = chart.timeScale().getVisibleLogicalRange(); if (r) rchart.timeScale().setVisibleLogicalRange(r); }
+});
+$('coinGrid').innerHTML = [...new Set([...POS.map(p => p.coin), ...COINS])].map(c => `<button data-c="${c}">${c}</button>`).join('');
+document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => switchSym(b.dataset.c));
+$('symBtn').onclick = () => openSheet('symSheet');
+$('symGo').onclick = () => { const v = clean($('symInput').value); if (v) switchSym(v); };
+async function switchSym(s) {
+  const old = sym; sym = s;
+  $('symSheet').classList.remove('open');
+  try { await api(`/api/v3/ticker/price?symbol=${s}USDT`); }
+  catch (e) { sym = old; toast('❗ این نماد پیدا نشد'); return; }
+  store.set('sym', sym); load();
+}
+$('tfs').innerHTML = TFS.map(t => `<button data-tf="${t}">${t}</button>`).join('');
+function markTf() { document.querySelectorAll('[data-tf]').forEach(b => b.classList.toggle('on', b.dataset.tf === tf)); }
+document.querySelectorAll('[data-tf]').forEach(b => b.onclick = () => { tf = b.dataset.tf; store.set('tf', tf); markTf(); load(); });
+
+markTf(); applyVis(); load();
+})();
+</script>
+</body>
+</html>
