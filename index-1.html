@@ -177,7 +177,7 @@ button.on{background:var(--acc);border-color:var(--acc);color:#fff}
 .card::before{content:"";display:block;width:40px;height:4px;border-radius:4px;background:var(--chipb);margin:0 auto 10px}
 .card h3{margin:0 0 10px;font-size:15px}
 .card p{line-height:1.9;font-size:13px;margin:6px 0}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;direction:ltr}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;direction:ltr}
 .row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--grid)}
 .sw{appearance:none;-webkit-appearance:none;width:46px;height:28px;border-radius:999px;background:var(--chipb);position:relative;transition:background .2s;border:0;padding:0;flex:0 0 auto;cursor:pointer}
 .sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px #0004}
@@ -278,4 +278,968 @@ input[type=text]{width:100%;background:var(--input);color:var(--txt);border:1px 
 </div></div>
 
 <div class="sheet" id="capSheet"><div class="card">
-  
+  <h3>💼 سرمایه و اهرم</h3>
+  <div class="note" id="capNote"></div>
+  <label class="fl" for="capIn">سرمایه (دلار)</label>
+  <input type="text" id="capIn" inputmode="decimal" placeholder="مثلاً 1000">
+  <div class="qrow" id="capQuick"></div>
+  <label class="fl">اهرم</label>
+  <div class="qrow" id="levQuick"></div>
+  <div class="two"><button id="capReset">↩️ بازنشانی</button><button id="capOk" class="on">✅ ذخیره</button></div>
+</div></div>
+
+<div class="sheet" id="cfSheet"><div class="card">
+  <h3 id="cfTitle"></h3>
+  <div id="cfBody"></div>
+  <div class="two"><button id="cfNo">↩️ انصراف</button><button id="cfOk" class="on">✅ تأیید</button></div>
+</div></div>
+
+<script>
+(() => {
+'use strict';
+const tg = window.Telegram && window.Telegram.WebApp;
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+
+// =====================================================================
+//                         تم روشن / تیره
+// =====================================================================
+const THEMES = {
+  dark: {bg:'#000000', panel:'#0a0c10', text:'#8a90a2', grid:'#0b0d12', gridH:'#10131a', border:'#141824', cross:'#3a4156', crossLbl:'#1b2236',
+    up:'#22d3a0', dn:'#ff5470', volUp:'#22d3a033', volDn:'#ff547033', wm:'#ffffff0d', gold:'#ffd24a',
+    tp:'#00e676', tp12:'#69f0ae', tpDone:'#3b6b5c', sl:'#ff1744', liq:'#b71c1c',
+    e20:'#ffb74d', e50:'#5aa9ff', bb:'#9575cd', bbm:'#9575cd55', rsi:'#b39ddb', trend:'#ffca28', measure:'#ffffff', alert:'#42a5f5', tmp:'#ffffff'},
+  light: {bg:'#ffffff', panel:'#f5f7fb', text:'#5b6378', grid:'#f2f4f9', gridH:'#e9edf4', border:'#dde2ec', cross:'#9aa3b8', crossLbl:'#2b3245',
+    up:'#0c9f76', dn:'#e0294a', volUp:'#0c9f7638', volDn:'#e0294a38', wm:'#0000000c', gold:'#b07d00',
+    tp:'#079669', tp12:'#12b27f', tpDone:'#9cc9ba', sl:'#d11a3b', liq:'#8e1a1a',
+    e20:'#f08c00', e50:'#2f6bff', bb:'#7e57c2', bbm:'#7e57c255', rsi:'#7e57c2', trend:'#c58a00', measure:'#222222', alert:'#1e88e5', tmp:'#222222'},
+};
+let theme = store.get('theme', 'dark'); if (!THEMES[theme]) theme = 'dark';
+let T = THEMES[theme];
+document.documentElement.dataset.theme = theme;
+
+if (tg) {
+  try { tg.ready(); tg.expand(); tg.setHeaderColor(T.bg); tg.setBackgroundColor(T.bg); } catch (e) {}
+  try { tg.setBottomBarColor && tg.setBottomBarColor(T.panel); } catch (e) {}
+  try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}   // کشیدن چارت، مینی‌اپ رو نبنده
+}
+
+const BASES = ['https://data-api.binance.vision', 'https://api.binance.com', 'https://api1.binance.com'];
+const WSS = ['wss://stream.binance.com:9443/stream?streams=', 'wss://data-stream.binance.vision/stream?streams='];
+const COINS = ['BTC','ETH','BNB','SOL','XRP','DOGE','ADA','TON','AVAX','LINK','DOT','TRX','LTC','SHIB','PEPE','NEAR','APT','ARB','OP','SUI'];
+const TFS = ['1m','5m','15m','1h','4h','1d'];
+const TF_SEC = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
+const STEP = 33.5;                       // هر مرحله سیو سود (٪ مسیر تارگت و ٪ دارایی)
+const OFF = -new Date().getTimezoneOffset() * 60;   // نمایش ساعت محلی
+
+// ---------- پوزیشن‌های ربات (از آدرس)
+const Q = new URLSearchParams(location.search);
+const clean = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/USDT$/, '');
+const nn = v => (v === null || v === undefined || v === '') ? null : (isFinite(+v) ? +v : null);
+let POS = [], pi = 0;
+try {
+  const raw = Q.get('pos');
+  if (raw) {
+    let s = raw.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '=';
+    POS = JSON.parse(atob(s)).map(x => ({
+      id: x.i, coin: clean(x.c), side: x.s === 'S' ? 'short' : 'long', entry: +x.e, target: +x.t,
+      stop: nn(x.sl), orig: nn(x.os) != null ? nn(x.os) : nn(x.sl), left: nn(x.l) == null ? 1 : +x.l,
+      saved: x.ts || 0, real: +x.r || 0, qty: +x.q, cap: +x.cap, lev: +x.lev || 1
+    })).filter(x => x.coin && x.entry > 0 && x.target > 0);
+  }
+} catch (e) { POS = []; }
+  if (!POS.length && nn(Q.get('entry')) && nn(Q.get('target'))) {        // سازگاری با لینک قدیمی (فقط نمایش)
+  const e = +Q.get('entry'), cap = nn(Q.get('cap')) || 100, lev = nn(Q.get('lev')) || 1;
+  POS = [{id: null, coin: clean(Q.get('coin') || 'BTC'), side: Q.get('side') === 'short' ? 'short' : 'long', entry: e,
+          target: +Q.get('target'), stop: nn(Q.get('stop')), orig: nn(Q.get('stop')), left: 1, saved: 0, real: 0,
+          qty: cap * lev / e, cap, lev}];
+}
+
+let sym = clean(Q.get('coin')) || (POS[0] && POS[0].coin) || clean(store.get('sym', 'BTC')) || 'BTC';
+let tf = Q.get('tf') || store.get('tf', '15m');
+if (!TFS.includes(tf)) tf = '15m';
+const ind = Object.assign({ema20: true, ema50: true, bb: false, vol: true, rsi: false}, store.get('ind', {}));
+let data = [], prec = 2;
+
+// ---------- helpers
+const f = p => p == null ? '—' : p.toLocaleString('en-US', {minimumFractionDigits: prec, maximumFractionDigits: prec});
+const fq = x => String(+x.toPrecision(6));
+const sgn = x => (x >= 0 ? '+' : '') + x.toFixed(2);
+const usd = x => (x >= 0 ? '+' : '−') + '$' + Math.abs(x).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const usd0 = x => '$' + x.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const rp = v => +v.toFixed(Math.max(prec, 2));
+function toast(msg, ms = 2800) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', ms);
+}
+function haptic(kind) { try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(kind); } catch (e) {} }
+function tick() { try { tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged(); } catch (e) {} }
+async function api(path) {
+  let err;
+  for (const b of BASES) {
+    try { const r = await fetch(b + path); if (!r.ok) throw new Error(r.status); return await r.json(); }
+    catch (e) { err = e; }
+  }
+  throw err;
+}
+function setPrec(p) {
+  prec = p >= 1000 ? 2 : p >= 1 ? 3 : p >= 0.1 ? 4 : p >= 0.01 ? 5 : 7;
+  candle.applyOptions({priceFormat: {type: 'price', precision: prec, minMove: Math.pow(10, -prec)}});
+}
+
+// ---------- charts
+const base = {
+  autoSize: true,
+  layout: {background: {type: 'solid', color: T.bg}, textColor: T.text, fontSize: 11, fontFamily: 'system-ui,-apple-system,Segoe UI,Tahoma,sans-serif'},
+  grid: {vertLines: {color: T.grid}, horzLines: {color: T.gridH}},
+  crosshair: {mode: LightweightCharts.CrosshairMode.Normal,
+    vertLine: {color: T.cross, labelBackgroundColor: T.crossLbl}, horzLine: {color: T.cross, labelBackgroundColor: T.crossLbl}},
+  rightPriceScale: {borderColor: T.border, scaleMargins: {top: 0.08, bottom: 0.2}},
+};
+const chart = LightweightCharts.createChart($('chart'), Object.assign({}, base, {
+  timeScale: {borderColor: T.border, timeVisible: true, secondsVisible: false, rightOffset: 6, barSpacing: 8},
+  kineticScroll: {touch: true, mouse: false},
+  watermark: {visible: true, text: '', color: T.wm, fontSize: 44, horzAlign: 'center', vertAlign: 'center'},
+}));
+const ts = chart.timeScale();
+const candle = chart.addCandlestickSeries({upColor: T.up, downColor: T.dn, borderVisible: false, wickUpColor: T.up, wickDownColor: T.dn});
+const vol = chart.addHistogramSeries({priceFormat: {type: 'volume'}, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false});
+chart.priceScale('vol').applyOptions({scaleMargins: {top: 0.86, bottom: 0}});
+const lineOpt = (color, w = 2) => ({color, lineWidth: w, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false});
+const e20 = chart.addLineSeries(lineOpt(T.e20, 1.5));
+const e50 = chart.addLineSeries(lineOpt(T.e50, 1.5));
+const bbU = chart.addLineSeries(lineOpt(T.bb, 1));
+const bbM = chart.addLineSeries(lineOpt(T.bbm, 1));
+const bbL = chart.addLineSeries(lineOpt(T.bb, 1));
+
+const rchart = LightweightCharts.createChart($('rsi'), Object.assign({}, base, {
+  rightPriceScale: {borderColor: T.border, scaleMargins: {top: 0.1, bottom: 0.1}},
+  timeScale: {visible: false}, handleScroll: false, handleScale: false,
+}));
+const rs = rchart.addLineSeries({color: T.rsi, lineWidth: 2, priceLineVisible: false});
+const rsHi = rs.createPriceLine({price: 70, color: T.dn + '88', lineWidth: 1, lineStyle: 2, axisLabelVisible: false});
+const rsLo = rs.createPriceLine({price: 30, color: T.up + '88', lineWidth: 1, lineStyle: 2, axisLabelVisible: false});
+chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && ind.rsi) rchart.timeScale().setVisibleLogicalRange(r); });
+
+const volColor = c => c.close >= c.open ? T.volUp : T.volDn;
+function applyTheme(name, persist = true) {
+  theme = name; T = THEMES[name];
+  document.documentElement.dataset.theme = name;
+  if (persist) store.set('theme', name);
+  const mt = document.querySelector('meta[name=theme-color]'); if (mt) mt.content = T.bg;
+  const lay = {
+    layout: {background: {type: 'solid', color: T.bg}, textColor: T.text},
+    grid: {vertLines: {color: T.grid}, horzLines: {color: T.gridH}},
+    crosshair: {vertLine: {color: T.cross, labelBackgroundColor: T.crossLbl}, horzLine: {color: T.cross, labelBackgroundColor: T.crossLbl}},
+    rightPriceScale: {borderColor: T.border},
+  };
+  chart.applyOptions(Object.assign({}, lay, {timeScale: {borderColor: T.border}, watermark: {color: T.wm}}));
+  rchart.applyOptions(lay);
+  candle.applyOptions({upColor: T.up, downColor: T.dn, wickUpColor: T.up, wickDownColor: T.dn});
+  e20.applyOptions({color: T.e20}); e50.applyOptions({color: T.e50});
+  bbU.applyOptions({color: T.bb}); bbM.applyOptions({color: T.bbm}); bbL.applyOptions({color: T.bb});
+  rs.applyOptions({color: T.rsi}); rsHi.applyOptions({color: T.dn + '88'}); rsLo.applyOptions({color: T.up + '88'});
+  if (data.length) {
+    vol.setData(data.map(d => ({time: d.time, value: d.vol, color: volColor(d)})));
+    drawBot();
+    const items = objs.map(o => o.it); wipeObjs(); items.forEach(it => addItem(it, false));
+  }
+  const sun = '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+  const moon = '<svg class="i" viewBox="0 0 24 24"><path d="M21 13A9 9 0 1111 3a7 7 0 0010 10z"/></svg>';
+  $('thBtn').innerHTML = name === 'dark' ? sun : moon;      // آیکون = حالتی که با کلیک میره
+  $('themeChk').checked = name === 'light';
+  if (tg) {
+    try { tg.setHeaderColor(T.bg); tg.setBackgroundColor(T.bg); } catch (e) {}
+    try { tg.setBottomBarColor && tg.setBottomBarColor(T.panel); } catch (e) {}
+  }
+  renderWallet();
+}
+$('thBtn').onclick = () => applyTheme(theme === 'dark' ? 'light' : 'dark');
+$('themeChk').onchange = e => applyTheme(e.target.checked ? 'light' : 'dark');
+
+// ---------- اندیکاتورها (کامل برای setData، افزایشی برای هر تیک → سریع)
+let a20 = [], a50 = [], rG = [], rL = [];
+const emaVals = (d, n) => { const k = 2 / (n + 1), o = new Array(d.length); let e = d[0].close;
+  for (let i = 0; i < d.length; i++) { e = i ? d[i].close * k + e * (1 - k) : d[i].close; o[i] = e; } return o; };
+function bbAt(i, n = 20, m = 2) {
+  let s = 0; for (let j = i - n + 1; j <= i; j++) s += data[j].close;
+  const mean = s / n; let v = 0; for (let j = i - n + 1; j <= i; j++) v += (data[j].close - mean) ** 2;
+  const sd = Math.sqrt(v / n); return {u: mean + m * sd, m: mean, l: mean - m * sd};
+}
+function rsiFull() {
+  const n = 14, out = []; rG = []; rL = [];
+  if (data.length <= n) return out;
+  let g = 0, l = 0;
+  for (let i = 1; i <= n; i++) { const x = data[i].close - data[i - 1].close; if (x >= 0) g += x; else l -= x; }
+  g /= n; l /= n; rG[n] = g; rL[n] = l;
+  out.push({time: data[n].time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l)});
+  for (let i = n + 1; i < data.length; i++) {
+    const x = data[i].close - data[i - 1].close;
+    g = (g * (n - 1) + Math.max(x, 0)) / n; l = (l * (n - 1) + Math.max(-x, 0)) / n; rG[i] = g; rL[i] = l;
+    out.push({time: data[i].time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l)});
+  }
+  return out;
+}
+function fullInd() {
+  if (!data.length) return;
+  a20 = emaVals(data, 20); a50 = emaVals(data, 50);
+  e20.setData(data.map((c, i) => ({time: c.time, value: a20[i]})));
+  e50.setData(data.map((c, i) => ({time: c.time, value: a50[i]})));
+  const U = [], M = [], L = [];
+  for (let i = 19; i < data.length; i++) { const b = bbAt(i); U.push({time: data[i].time, value: b.u}); M.push({time: data[i].time, value: b.m}); L.push({time: data[i].time, value: b.l}); }
+  bbU.setData(U); bbM.setData(M); bbL.setData(L);
+  if (ind.rsi) rs.setData(rsiFull());
+}
+function tailInd() {
+  const n = data.length, i = n - 1; if (!n) return; const c = data[i];
+  const ema = (arr, k) => { arr[i] = i ? c.close * k + arr[i - 1] * (1 - k) : c.close; arr.length = n; return arr[i]; };
+  e20.update({time: c.time, value: ema(a20, 2 / 21)});
+  e50.update({time: c.time, value: ema(a50, 2 / 51)});
+  if (n >= 20) { const b = bbAt(i); bbU.update({time: c.time, value: b.u}); bbM.update({time: c.time, value: b.m}); bbL.update({time: c.time, value: b.l}); }
+  if (ind.rsi && n > 14 && rG[i - 1] != null) {
+    const x = c.close - data[i - 1].close;
+    const g = (rG[i - 1] * 13 + Math.max(x, 0)) / 14, l = (rL[i - 1] * 13 + Math.max(-x, 0)) / 14;
+    rG[i] = g; rL[i] = l; rs.update({time: c.time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l)});
+  }
+}
+function applyVis() {
+  e20.applyOptions({visible: ind.ema20}); e50.applyOptions({visible: ind.ema50});
+  [bbU, bbM, bbL].forEach(s => s.applyOptions({visible: ind.bb}));
+  vol.applyOptions({visible: ind.vol});
+  $('rsi').style.display = ind.rsi ? 'block' : 'none';
+  document.querySelectorAll('[data-ind]').forEach(c => c.checked = !!ind[c.dataset.ind]);
+}
+
+// ---------- دیتا + زنده
+async function load() {
+  stopLive(); wipeObjs(); clearTmp(); clearMeasure();
+  chart.applyOptions({watermark: {text: sym + ' · ' + tf}});
+  $('load').style.display = 'flex';
+  const k0 = POS.findIndex(p => p.coin === sym); if (k0 >= 0) pi = k0;
+  try {
+    const k = await api(`/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=720`);
+    data = k.map(x => ({time: Math.floor(x[0] / 1000) + OFF, open: +x[1], high: +x[2], low: +x[3], close: +x[4], vol: +x[5]}));
+    setPrec(data[data.length - 1].close);
+    candle.setData(data.map(({time, open, high, low, close}) => ({time, open, high, low, close})));
+    vol.setData(data.map(d => ({time: d.time, value: d.vol, color: volColor(d)})));
+    fullInd(); applyVis(); restore(); drawBot();
+    chart.timeScale().setVisibleLogicalRange({from: Math.max(0, data.length - 90), to: data.length + 6});
+    onPrice(data[data.length - 1].close, true);
+    buildChips(); buildPanel();
+    startLive(); loadTicker();
+  } catch (e) {
+    toast('❌ دریافت کندل‌ها ممکن نشد؛ فیلترشکن رو چک کن');
+                                }
+    $('load').style.display = 'none';
+}
+async function loadTicker() {
+  try {
+    const t = await api(`/api/v3/ticker/24hr?symbol=${sym}USDT`);
+    const c = +t.priceChangePercent; const el = $('chg');
+    el.textContent = sgn(c) + '%'; el.className = c >= 0 ? 'g' : 'r';
+  } catch (e) {}
+}
+let lastShown = null;
+function header(p) {
+  $('symTxt').textContent = sym + '/USDT'; $('price').textContent = f(p);
+  if (lastShown != null && p !== lastShown) $('price').style.color = p > lastShown ? T.up : T.dn;
+  lastShown = p;
+}
+function onPrice(p, force) { header(p); updatePanel(p, force); refreshBoxes(); renderWallet(); }
+
+function applyCandle(c, isTick) {
+  const last = data[data.length - 1];
+  if (last && c.time === last.time) data[data.length - 1] = c;
+  else if (!last || c.time > last.time) data.push(c);
+  else return;
+  candle.update({time: c.time, open: c.open, high: c.high, low: c.low, close: c.close});
+  if (!isTick) vol.update({time: c.time, value: c.vol, color: volColor(c)});
+  tailInd(); onPrice(c.close);
+}
+// تیک‌های aggTrade با requestAnimationFrame جمع میشن تا موبایل روون بمونه
+let tickP = null, tickT = 0, raf = 0;
+function onTick(p, t) { tickP = p; tickT = t; if (!raf) raf = requestAnimationFrame(flush); }
+function flush() {
+  raf = 0; const p = tickP; tickP = null;
+  const last = data[data.length - 1]; if (p == null || !last) return;
+  if (tickT >= last.time + TF_SEC[tf]) return;       // کندل جدید از استریم kline میاد
+  applyCandle({time: last.time, open: last.open, high: Math.max(last.high, p), low: Math.min(last.low, p), close: p, vol: last.vol}, true);
+}
+
+let ws = null, poll = null, wsTimer = null;
+function stopLive() {
+  clearTimeout(wsTimer); clearInterval(poll); poll = null;
+  if (ws) { const w = ws; ws = null; try { w.close(); } catch (e) {} }
+  $('live').className = '';
+}
+function startLive() { stopLive(); connectWS(0); }
+function connectWS(i) {
+  if (i >= WSS.length) { startPoll(); return; }
+  let got = false; const s = sym.toLowerCase() + 'usdt';
+  const w = new WebSocket(WSS[i] + `${s}@kline_${tf}/${s}@aggTrade`);
+  ws = w;
+  const to = setTimeout(() => { if (!got) { try { w.close(); } catch (e) {} } }, 7000);
+  w.onmessage = e => {
+    got = true; clearInterval(poll); poll = null; $('live').className = 'ok';
+    let m; try { m = JSON.parse(e.data).data; } catch (x) { return; }
+    if (!m) return;
+    if (m.e === 'kline') { const k = m.k; applyCandle({time: Math.floor(k.t / 1000) + OFF, open: +k.o, high: +k.h, low: +k.l, close: +k.c, vol: +k.v}); }
+    else if (m.e === 'aggTrade') onTick(+m.p, Math.floor(m.T / 1000) + OFF);
+  };
+  w.onerror = () => { try { w.close(); } catch (e) {} };
+  w.onclose = () => {
+    clearTimeout(to);
+    if (ws !== w) return;
+    if (!got) connectWS(i + 1);
+    else { startPoll(); wsTimer = setTimeout(() => connectWS(0), 8000); }
+  };
+}
+function startPoll() {
+  if (poll) return;
+  $('live').className = '';
+  const once = async () => {
+    try {
+      const k = await api(`/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=3`);
+      k.forEach(x => applyCandle({time: Math.floor(x[0] / 1000) + OFF, open: +x[1], high: +x[2], low: +x[3], close: +x[4], vol: +x[5]}));
+    } catch (e) {}
+  };
+  once(); poll = setInterval(once, 2000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && data.length) { startLive(); } });
+setInterval(loadTicker, 30000);
+
+// ---------- لجند کراس‌هر
+chart.subscribeCrosshairMove(p => {
+  const d = p.seriesData && p.seriesData.get(candle);
+  if (!d) { $('legend').textContent = ''; return; }
+  const ch = (d.close - d.open) / d.open * 100;
+  $('legend').innerHTML = `O ${f(d.open)}  H ${f(d.high)}  L ${f(d.low)}  C ${f(d.close)}  <b class="${ch >= 0 ? 'g' : 'r'}">${sgn(ch)}%</b>`;
+});
+
+// =====================================================================
+//                      اندیکاتور پوزیشن ربات
+// =====================================================================
+const dirOf = p => p.side === 'long' ? 1 : -1;
+const levels = p => [p.entry + (p.target - p.entry) * STEP / 100, p.entry + (p.target - p.entry) * 2 * STEP / 100, p.target];
+function progress(p, pr) {
+  const d = dirOf(p), tdist = (p.target - p.entry) * d;
+  const prog = tdist ? (pr - p.entry) * d / tdist * 100 : 0;
+  let used = 0;
+  if (p.orig) { const sd = (p.entry - p.orig) * d; if (sd > 0) used = Math.max(0, (p.entry - pr) * d / sd * 100); }
+  return {prog, used};
+}
+const guarded = p => !!p.stop && p.stop === p.orig;
+const liqOf = p => p.lev > 1 ? p.entry * (1 - dirOf(p) / p.lev) : null;
+function stateKey(p, pr) {
+  const d = dirOf(p), {prog, used} = progress(p, pr);
+  if (p.stop && (pr - p.stop) * d <= 0) return 'stop';
+  if (prog >= 100) return 'tp3';
+  if (prog >= 2 * STEP && p.saved < 2) return 'tp2';
+  if (prog >= STEP && p.saved < 1) return 'tp1';
+  if (guarded(p)) { if (used >= 80) return 'sw80'; if (used >= 50) return 'sw50'; }
+  const lq = liqOf(p);
+  if (lq && (pr - (p.entry + 0.8 * (lq - p.entry))) * d <= 0) return 'liq';
+  return null;
+}
+
+// --- تحلیل ۴ساعته (همون منطق ربات)
+const techC = {};
+async function getTech(coin) {
+  const c = techC[coin]; if (c && Date.now() - c.ts < 120000) return c.t;
+  const k = await api(`/api/v3/klines?symbol=${coin}USDT&interval=4h&limit=120`);
+  const kl = k.map(x => [+x[2], +x[3], +x[4]]);
+  const closes = kl.map(x => x[2]);
+  const ema = (v, n) => { const kk = 2 / (n + 1); let e = v[0]; for (let i = 1; i < v.length; i++) e = v[i] * kk + e * (1 - kk); return e; };
+  let g = 0, l = 0; for (let i = closes.length - 14; i < closes.length; i++) { const x = closes[i] - closes[i - 1]; g += Math.max(x, 0); l += Math.max(-x, 0); }
+  const trs = []; for (let i = 1; i < kl.length; i++) trs.push(Math.max(kl[i][0] - kl[i][1], Math.abs(kl[i][0] - kl[i - 1][2]), Math.abs(kl[i][1] - kl[i - 1][2])));
+  const highs = [], lows = [];
+  for (let i = 3; i < kl.length - 3; i++) {
+    const seg = kl.slice(i - 3, i + 4);
+    if (kl[i][0] === Math.max(...seg.map(x => x[0]))) highs.push(kl[i][0]);
+    if (kl[i][1] === Math.min(...seg.map(x => x[1]))) lows.push(kl[i][1]);
+  }
+  const t = {highs, lows, hi: Math.max(...kl.map(x => x[0])), lo: Math.min(...kl.map(x => x[1])),
+    rsi: l === 0 ? 100 : 100 - 100 / (1 + g / l), ema20: ema(closes.slice(-60), 20), ema50: ema(closes, 50), atr: trs.slice(-14).reduce((a, b) => a + b, 0) / 14};
+  techC[coin] = {t, ts: Date.now()}; return t;
+}
+function nearest(t, pr) {
+  const res = t.highs.filter(h => h > pr * 1.002).sort((a, b) => a - b), sup = t.lows.filter(x => x < pr * 0.998).sort((a, b) => b - a);
+  return {res: res[0] || t.hi, sup: sup[0] || t.lo};
+}
+// توصیه منطقی با توجه به مقاومت/حمایت، RSI و روند
+function situation(p, t, pr, key) {
+  const d = dirOf(p), L = [];
+  if (!t) return ['تحلیل تکنیکال در دسترس نیست؛ طبق پلن عمل کن'];
+  const {res, sup} = nearest(t, pr), r = t.rsi, av = t.atr;
+  const withTrend = (t.ema20 > t.ema50) === (d === 1);
+  const ahead = d === 1 ? res : sup, behind = d === 1 ? sup : res;
+  const nA = d === 1 ? 'مقاومت' : 'حمایت', nB = d === 1 ? 'حمایت' : 'مقاومت';
+  const nearA = Math.abs(ahead - pr) < 0.7 * av, nearB = Math.abs(pr - behind) < 0.7 * av;
+  const extreme = d === 1 ? r > 70 : r < 30, exhausted = d === 1 ? r < 35 : r > 65;
+  if (key === 'tp1' || key === 'tp2' || key === 'tp3') {
+    if (nearA) L.push(`🧱 نزدیک ${nA} ${f(ahead)}؛ احتمال برگشت زیاده، سیو کردن منطقیه`);
+    if (extreme) L.push(`🔥 RSI ${r.toFixed(0)} اشباعه؛ سیو سود رو حتماً انجام بده`);
+    if (!withTrend) L.push('⚠️ خلاف روند ۴ساعته‌ای؛ می‌تونی سهم بیشتری (تا ۵۰٪) سیو کنی');
+    if (!L.length) L.push('📈 روند همراهته و مانع نزدیکی نیست؛ فقط سهم برنامه رو سیو کن و بقیه رو با استاپ بالاتر نگه دار');
+  } else if (key === 'sw50' || key === 'sw80') {
+    if (nearB && exhausted) L.push(`🧊 نزدیک ${nB} ${f(behind)} و RSI ${r.toFixed(0)}؛ احتمال برگشت هست ولی حد ضرر رو دورتر نبر`);
+    else if (nearB) L.push(`🛡 نزدیک ${nB} ${f(behind)}؛ اگه کندل ۴ساعته اون رو بشکنه، سریع‌تر خارج شو`);
+    if (!withTrend) L.push('⚠️ روند ۴ساعته خلاف پوزیشنته؛ احتمال خوردن حد ضرر بیشتره');
+    if (key === 'sw80') L.push('🚨 خیلی نزدیکه؛ یا الان ببند یا بذار استاپ کار خودش رو بکنه، جابجاش نکن');
+    else if (!L.length) L.push('⏳ هنوز دلیل ورودت باطل نشده؛ حد ضرر رو دست نزن و صبر کن');
+  } else if (key === 'stop') L.push('❌ از پلن خارج نشو؛ ببند و دنبال ستاپ بعدی باش');
+  else if (key === 'liq') L.push('⚙️ بخشی از پوزیشن رو ببند یا مارجین اضافه کن');
+  else {
+    L.push(withTrend ? '✅ هم‌جهت با روند ۴ساعته' : '⚠️ خلاف روند ۴ساعته‌ای؛ احتیاط کن');
+    L.push(`🧱 ${nA} جلوت: ${f(ahead)} (${sgn((ahead - pr) / pr * 100 * d)}%) • 🛡 ${nB} پشتت: ${f(behind)}`);
+    L.push(extreme ? `🔥 RSI ${r.toFixed(0)} اشباعه؛ نزدیک سیو‌ها حواست باشه` : exhausted ? `🧊 RSI ${r.toFixed(0)}؛ فشار برگشتی کمه` : `😐 RSI ${r.toFixed(0)} خنثی`);
+    if (p.stop && p.orig) { const risk = Math.abs(p.entry - p.orig); if (risk) L.push(`⚖️ ریسک به ریوارد 1 به ${(Math.abs(p.target - p.entry) / risk).toFixed(1)}`); }
+    L.push('⏳ هنوز رویدادی نیست؛ طبق پلن صبر کن');
+  }
+  return L;
+}
+
+// --- رویدادها (بنر داخل اپ)
+const fired = store.get('fired', {});
+const EVT = {
+  tp1: ['win', n => `✂️ مرحله ۱ سیو سود رسید`, p => `${STEP}% از دارایی (${fq(p.qty * STEP / 100)} ${p.coin}) رو خارج کن و استاپ رو ببر روی ورود`],
+  tp2: ['win', n => `✂️ مرحله ۲ سیو سود رسید`, p => `${STEP}% دیگه (${fq(p.qty * STEP / 100)} ${p.coin}) رو خارج کن و استاپ رو ببر روی TP1`],
+  tp3: ['win', n => `🎯 تارگت خورد!`, p => `باقی‌مانده رو ببند یا بخش کوچیکی رو با استاپ ترلینگ نگه دار`],
+  stop: ['bad', n => `🛑 حد ضرر خورد`, p => `پوزیشن رو ببند و ضرر رو بپذیر؛ نذار بزرگ‌تر بشه`],
+  sw50: ['warn', n => `⚠️ ${n.toFixed(0)}% از حد ضرر پر شده`, p => `قیمت داره به حد ضرر نزدیک میشه`],
+  sw80: ['bad', n => `🚨 ${n.toFixed(0)}% از حد ضرر پر شده!`, p => `خیلی نزدیکه، تصمیمت رو بگیر`],
+    liq: ['bad', n => `💀 نزدیک لیکوئید!`, p => `لیکوئید: ${f(liqOf(p))}`],
+};
+let evtTimer = 0;
+function showEvt(p, key, used) {
+  const [cls, t, s] = EVT[key], el = $('evt');
+  el.className = cls; el.style.display = 'block';
+  el.innerHTML = `<b>${t(used)} — ${p.coin} ${p.side === 'long' ? 'Long' : 'Short'}</b>${s(p)}<div style="opacity:.6;font-size:11px">برای بستن بزن</div>`;
+  haptic(cls === 'win' ? 'success' : cls === 'warn' ? 'warning' : 'error');
+  clearTimeout(evtTimer); evtTimer = setTimeout(() => el.style.display = 'none', 14000);
+}
+$('evt').onclick = () => { $('evt').style.display = 'none'; $('pp').classList.add('open'); $('bPos').classList.add('on'); };
+function checkEvents(p, pr, key, used) {
+  const id = String(p.id != null ? p.id : 'x') + ':';
+  if (used < 25) { delete fired[id + 'sw50']; delete fired[id + 'sw80']; }
+  if (key && !fired[id + key]) {
+    fired[id + key] = 1;
+    if (key === 'sw80') fired[id + 'sw50'] = 1;
+    store.set('fired', fired);
+    showEvt(p, key, used);
+  }
+}
+
+// --- خطوط روی چارت
+let botLines = [];
+function drawBot() {
+  botLines.forEach(l => { try { candle.removePriceLine(l); } catch (e) {} }); botLines = [];
+  const p = cur(); if (!p) return;
+  const lv = levels(p);
+  const add = (price, color, title, style, w) => botLines.push(candle.createPriceLine({price, color, lineWidth: w || 2, lineStyle: style || 0, axisLabelVisible: true, title}));
+  add(p.entry, T.gold, (p.side === 'long' ? 'LONG ' : 'SHORT ') + p.lev + 'x');
+  add(lv[0], p.saved >= 1 ? T.tpDone : T.tp12, p.saved >= 1 ? 'TP1 ✓' : 'TP1 ✂', 2, 1);
+  add(lv[1], p.saved >= 2 ? T.tpDone : T.tp12, p.saved >= 2 ? 'TP2 ✓' : 'TP2 ✂', 2, 1);
+  add(lv[2], T.tp, 'TARGET 🎯');
+  if (p.stop) add(p.stop, T.sl, p.stop === p.entry ? 'STOP 🔒' : 'STOP');
+  const lq = liqOf(p); if (lq) add(lq, T.liq, 'LIQ', 1, 1);
+}
+
+// --- پنل
+const cur = () => (POS[pi] && POS[pi].coin === sym) ? POS[pi] : null;
+let lastKey = undefined, advTok = 0;
+function buildChips() {
+  const el = $('chips');
+  if (!POS.length) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = POS.map((p, i) => `<button data-pi="${i}" class="${i === pi && p.coin === sym ? 'on' : ''}">${p.side === 'long' ? '🟢' : '🔴'} ${p.coin} ${p.side === 'long' ? 'L' : 'S'} ${p.lev > 1 ? p.lev + 'x' : ''}</button>`).join('');
+  el.querySelectorAll('[data-pi]').forEach(b => b.onclick = () => {
+    pi = +b.dataset.pi; const p = POS[pi];
+    if (p.coin !== sym) { sym = p.coin; store.set('sym', sym); load(); } else { drawBot(); buildChips(); buildPanel(); renderWallet(); }
+  });
+}
+function buildPanel() {
+  const p = cur(), pp = $('pp'); lastKey = undefined;
+  if (!p) { pp.style.display = 'none'; return; }
+  pp.style.display = 'block';
+  const lv = levels(p), canAct = p.id != null, mxStep = Math.min(STEP / 100, p.left);
+  $('ppBody').innerHTML = `
+    <div class="kv"><span>ورود</span><b class="num">${f(p.entry)}</b><span>الان</span><b class="num" id="pNow">—</b></div>
+    <div class="kv"><span>حجم باقی‌مانده</span><b class="num">${(p.left * 100).toFixed(0)}% (${fq(p.qty * p.left)} ${p.coin})</b><span>سیو‌شده</span><b class="num ${p.real >= 0 ? 'g' : 'r'}">${p.real >= 0 ? '+' : ''}${p.real.toFixed(2)}$</b></div>
+    <div class="bl"><span>🎯 مسیر تا تارگت</span><b class="num" id="pProgT"></b></div>
+    <div class="bar"><i class="gb" id="pProgB"></i><s style="left:${STEP}%"></s><s style="left:${2 * STEP}%"></s></div>
+    <div class="bl"><span id="pStopL">🛑 حد ضرر</span><b class="num" id="pStopT"></b></div>
+    <div class="bar" id="stopBar"><i class="rb" id="pStopB"></i><s style="left:50%"></s><s style="left:80%"></s></div>
+    <div style="margin-top:8px">
+      ${lv.map((x, i) => `<div class="lv ${p.saved > i ? 'done' : ''}" id="lv${i}"><span>${i < 2 ? '✂️ TP' + (i + 1) + ' (' + (STEP * (i + 1)).toFixed(i ? 0 : 1) + '%)' : '🎯 تارگت'}</span><b class="num">${f(x)}</b><em class="num" id="ld${i}"></em></div>`).join('')}
+    </div>
+    <div class="next" id="pNext"></div>
+    <div class="adv"><h4>🧠 کار منطقی الان چیه؟</h4><div id="pAdv">⏳ در حال تحلیل...</div></div>
+    <div class="acts">
+      <button class="go" id="aPart" ${canAct && p.saved < 3 ? '' : 'disabled'}>✂️ سیو شد</button>
+      <button id="aSL" ${canAct && p.stop !== p.entry ? '' : 'disabled'}>🔒 استاپ = ورود</button>
+      <button class="danger" id="aClose" ${canAct ? '' : 'disabled'}>❌ بستن</button>
+    </div>
+    <div class="hint">${canAct ? 'دکمه‌ها فقط وضعیت داخل ربات رو آپدیت می‌کنن؛ توی صرافی هم خودت اجرا کن.' : 'این نمای فقط‌خوانده؛ برای دکمه‌ها از «🕯 چارت زنده» پایین چت ربات باز کن.'}</div>`;
+  $('ppHead').onclick = () => { $('pp').classList.toggle('open'); $('bPos').classList.toggle('on', $('pp').classList.contains('open')); };
+  if (canAct) {
+    $('aPart').onclick = () => {
+      const pr = last(), d = dirOf(p), frac = Math.min(STEP / 100, p.left), usdv = p.qty * frac * (pr - p.entry) * d;
+      const ns = p.saved === 0 ? p.entry : levels(p)[Math.min(p.saved - 1, 1)];
+      ask('✂️ ثبت سیو سود', `<p>${(frac * 100).toFixed(1)}% از دارایی (<b class="num">${fq(p.qty * frac)} ${p.coin}</b>) با قیمت <b class="num">${f(pr)}</b></p>
+        <p>سود این بخش: <b class="num ${usdv >= 0 ? 'g' : 'r'}">${usdv >= 0 ? '+' : ''}${usdv.toFixed(2)}$</b></p>
+        <p>حد ضرر جدید: <b class="num">${f(ns)}</b></p>
+        <p style="color:var(--mut);font-size:12px">بعد از ثبت، مینی‌اپ بسته میشه و نتیجه توی چت میاد.</p>`, () => sendBot({t: 'part', id: p.id}));
+    };
+    $('aSL').onclick = () => ask('🔒 حد ضرر روی ورود', `<p>حد ضرر ${p.coin} بره روی <b class="num">${f(p.entry)}</b> (ریسک‌فری)؟</p>`, () => sendBot({t: 'sl', id: p.id, price: p.entry}));
+    $('aClose').onclick = () => {
+      const pr = last(), d = dirOf(p), total = p.qty * p.left * (pr - p.entry) * d + p.real;
+      ask('❌ بستن پوزیشن', `<p>${p.coin} ${p.side === 'long' ? 'Long' : 'Short'} با قیمت لحظه‌ای <b class="num">${f(pr)}</b> بسته بشه؟</p>
+        <p>نتیجه کل: <b class="num ${total >= 0 ? 'g' : 'r'}">${total >= 0 ? '+' : ''}${total.toFixed(2)}$ (${sgn(total / p.cap * 100)}%)</b></p>
+        <p style="color:var(--mut);font-size:12px">فقط توی ربات بسته میشه؛ توی صرافی هم ببندش.</p>`, () => sendBot({t: 'close', id: p.id}));
+    };
+  }
+  onPrice(last(), true);
+}
+const last = () => data.length ? data[data.length - 1].close : null;
+
+function updatePanel(price, force) {
+  const p = cur(); if (!p || price == null) return;
+  const d = dirOf(p), {prog, used} = progress(p, price), lv = levels(p);
+  const total = p.qty * p.left * (price - p.entry) * d + p.real, pct = total / p.cap * 100;
+  const key = stateKey(p, price);
+  const dot = key === 'stop' || key === 'sw80' || key === 'liq' ? '🚨' : key === 'sw50' ? '⚠️' : key ? '✂️' : '';
+  $('ppHead').innerHTML = `<span>${d === 1 ? '🟢' : '🔴'} <b>${p.coin}</b> ${p.side === 'long' ? 'Long' : 'Short'}${p.lev > 1 ? ' ' + p.lev + 'x' : ''}</span>
+    <b class="num ${total >= 0 ? 'g' : 'r'}">${total >= 0 ? '+' : ''}${total.toFixed(2)}$ (${sgn(pct)}%)</b>
+    <span class="num">🎯 ${Math.max(prog, 0).toFixed(0)}%</span><span>${dot}</span><span class="sp"></span><i>▴</i>`;
+  const set = (id, v) => { const e = $(id); if (e && e.textContent !== v) e.textContent = v; };
+  if (!$('pNow')) return;
+  set('pNow', f(price));
+  set('pProgT', Math.max(prog, 0).toFixed(0) + '%');
+  $('pProgB').style.width = Math.min(100, Math.max(0, prog)) + '%';
+  const sb = $('stopBar'), sl = $('pStopL');
+  if (!p.stop) { sl.textContent = '🛑 بدون حد ضرر ❗'; set('pStopT', ''); sb.style.display = 'none'; }
+  else if (p.stop === p.entry) { sl.textContent = '🔒 ریسک‌فری (استاپ روی ورود)'; set('pStopT', f(p.stop)); sb.style.display = 'none'; }
+  else if (guarded(p)) { sl.textContent = '🛑 مصرف حد ضرر'; set('pStopT', used.toFixed(0) + '%  •  ' + f(p.stop)); sb.style.display = 'block'; $('pStopB').style.width = Math.min(100, used) + '%'; }
+  else { sl.textContent = '🛑 حد ضرر فعلی'; set('pStopT', f(p.stop)); sb.style.display = 'none'; }
+  lv.forEach((x, i) => {
+    const rem = (x - price) / price * 100 * d;
+    set('ld' + i, p.saved > i ? '✓ انجام شد' : (prog >= (i + 1) * STEP ? '✅ رسید' : sgn(rem) + '% مونده'));
+  });
+  // قدم بعدی
+  const nx = $('pNext');
+  if (p.saved >= 3 || p.left <= 0.01) nx.innerHTML = '🏁 همه مراحل ثبت شده';
+  else {
+    const i = Math.min(p.saved, 2), hot = prog >= (i + 1) * STEP;
+    nx.className = 'next' + (hot ? ' hot' : '');
+    const html = i < 2
+      ? `${hot ? '🔔 <b>الان وقت سیو کردنه:</b>' : '✂️ <b>قدم بعدی:</b>'} در <b class="num">${f(lv[i])}</b> ${STEP}% از دارایی (<b class="num">${fq(p.qty * STEP / 100)} ${p.coin}</b>) رو خارج کن و استاپ رو ببر روی ${i === 0 ? 'ورود' : 'TP1'}`
+      : `${hot ? '🎯 <b>تارگت رسید:</b>' : '🎯 <b>قدم آخر:</b>'} در <b class="num">${f(lv[2])}</b> باقی‌مانده (<b class="num">${fq(p.qty * p.left)} ${p.coin}</b>) رو ببند`;
+    if (nx.dataset.h !== html) { nx.dataset.h = html; nx.innerHTML = html; }
+  }
+  checkEvents(p, price, key, used);
+  if (force || key !== lastKey) { lastKey = key; renderAdvice(p, price, key); }
+}
+async function renderAdvice(p, pr, key) {
+  const tok = ++advTok; let t = null;
+  try { t = await getTech(p.coin); } catch (e) {}
+  if (tok !== advTok || !$('pAdv')) return;
+  $('pAdv').innerHTML = situation(p, t, pr, key).map(x => `<div>${x}</div>`).join('');
+}
+setInterval(() => { const p = cur(), pr = last(); if (p && pr) renderAdvice(p, pr, lastKey || null); }, 60000);
+
+// --- ارسال دستور به ربات
+function sendBot(obj) {
+  try {
+    if (!tg || !tg.sendData) throw new Error('no tg');
+    tg.sendData(JSON.stringify(obj));       // مینی‌اپ بعدش بسته میشه و ربات جواب میده
+  } catch (e) {
+    toast('این دکمه فقط وقتی کار می‌کنه که از «🕯 چارت زنده» پایین چت ربات بازش کنی', 5000);
+  }
+}
+let cfFn = null;
+function ask(title, html, fn) { $('cfTitle').textContent = title; $('cfBody').innerHTML = html; cfFn = fn; $('cfSheet').classList.add('open'); }
+$('cfOk').onclick = () => { $('cfSheet').classList.remove('open'); const fn = cfFn; cfFn = null; if (fn) fn(); };
+$('cfNo').onclick = () => { $('cfSheet').classList.remove('open'); cfFn = null; };
+$('bPos').onclick = () => {
+  if (!POS.length) { toast('پوزیشن فعالی نداری؛ توی ربات «📈 ثبت پوزیشن» رو بزن و اندیکاتور رو فعال کن', 4500); return; }
+  if (!cur()) { const k = POS.findIndex(x => x.coin === sym); pi = k >= 0 ? k : 0; if (POS[pi].coin !== sym) { sym = POS[pi].coin; store.set('sym', sym); load(); } }
+  $('pp').classList.toggle('open'); $('bPos').classList.toggle('on', $('pp').classList.contains('open'));
+};
+
+// =====================================================================
+//                    سرمایه، اهرم و کارت موجودی
+// =====================================================================
+// سرمایه‌ی پوزیشن ربات از خود ربات میاد؛ سرمایه/اهرم زیر برای باکس‌های Long/Short ترسیمی هست
+const CAPITAL = () => { const v = store.get('cap', null); return v != null && v > 0 ? v : (POS[0] ? POS[0].cap : 1000); };
+const LEV = () => { const v = store.get('lev', null); return v != null && v >= 1 ? v : (POS[0] ? POS[0].lev : 1); };
+const lastBox = () => { for (let i = objs.length - 1; i >= 0; i--) if (objs[i].it.k === 'pos' || objs[i].it.k === 'rr') return objs[i]; return null; };
+
+function walletInfo() {
+  const pr = last(), p = cur();
+  if (p && pr != null) {
+    const total = p.qty * p.left * (pr - p.entry) * dirOf(p) + p.real;
+    return {cap: p.cap, pnl: total, src: `پوزیشن ربات · ${p.coin} ${p.side === 'long' ? 'Long' : 'Short'}${p.lev > 1 ? ' ' + p.lev + 'x' : ''}`};
+  }
+  const b = lastBox();
+  if (b && pr != null) {
+    const s = boxStats(b.it, pr), C = CAPITAL();
+    return {cap: C, pnl: Math.max(-C, s.curMoney), src: `پوزیشن ترسیمی · ${s.d === 1 ? 'Long' : 'Short'} ${LEV()}x`};
+                                                                                                                                                                   }
+  return {cap: CAPITAL(), pnl: 0, src: 'سرمایه شما (پوزیشن بازی نیست)'};
+}
+let eqPrev = null;
+function renderWallet() {
+  const w = walletInfo(), eq = Math.max(0, w.cap + w.pnl), pct = w.cap ? w.pnl / w.cap * 100 : 0;
+  const cls = Math.abs(w.pnl) < 0.005 ? 'flat' : w.pnl > 0 ? 'up' : 'dn';
+  const el = $('wallet');
+  if (!el.classList.contains(cls)) { el.classList.remove('up', 'dn', 'flat'); el.classList.add(cls); }
+  const set = (id, v) => { const e = $(id); if (e.textContent !== v) e.textContent = v; };
+  set('wSrc', w.src);
+  set('wCap', 'سرمایه اولیه ' + usd0(w.cap));
+  set('wEq', usd0(eq));
+  set('wDelta', (w.pnl >= 0 ? '▲ ' : '▼ ') + usd(w.pnl) + '  (' + sgn(pct) + '%)');
+  if (eqPrev != null && Math.abs(eq - eqPrev) >= 0.005) {
+    const k = eq > eqPrev ? 'tkUp' : 'tkDn';
+    el.classList.remove('tkUp', 'tkDn'); void el.offsetWidth; el.classList.add(k);
+  }
+  eqPrev = eq;
+}
+$('wallet').onclick = () => openCap();
+
+let levSel = 1;
+function openCap() {
+  const p = cur();
+  $('capNote').innerHTML = p
+    ? `سرمایه‌ی پوزیشن ربات (<b class="num">${usd0(p.cap)}</b>) از خود ربات میاد و تغییر نمی‌کنه. مقدار پایین فقط برای باکس‌های Long / Short که روی چارت می‌کشی استفاده میشه.`
+    : 'سرمایه و اهرمت رو وارد کن؛ سود و ضرر هر باکس Long / Short و موجودی بالای صفحه با همین عدد حساب میشه. سبز = سود، قرمز = ضرر.';
+  $('capIn').value = String(CAPITAL());
+  levSel = LEV(); markLev();
+  openSheet('capSheet');
+}
+function markLev() { document.querySelectorAll('[data-lv]').forEach(b => b.classList.toggle('on', +b.dataset.lv === levSel)); }
+$('capQuick').innerHTML = [100, 500, 1000, 5000, 10000].map(v => `<button data-cq="${v}">$${v.toLocaleString('en-US')}</button>`).join('');
+$('levQuick').innerHTML = [1, 2, 3, 5, 10, 20, 50].map(v => `<button data-lv="${v}">${v}x</button>`).join('');
+document.querySelectorAll('[data-cq]').forEach(b => b.onclick = () => $('capIn').value = b.dataset.cq);
+document.querySelectorAll('[data-lv]').forEach(b => b.onclick = () => { levSel = +b.dataset.lv; markLev(); });
+$('capOk').onclick = () => {
+  const v = parseFloat(String($('capIn').value).replace(/[, $]/g, ''));
+  if (!isFinite(v) || v <= 0) { toast('❗ یه عدد معتبر برای سرمایه بزن'); return; }
+  store.set('cap', v); store.set('lev', levSel);
+  $('capSheet').classList.remove('open');
+  refreshBoxes(); renderWallet(); toast('✅ سرمایه ' + usd0(v) + ' با اهرم ' + levSel + 'x ذخیره شد');
+};
+$('capReset').onclick = () => {
+  store.set('cap', null); store.set('lev', null);
+  $('capSheet').classList.remove('open'); refreshBoxes(); renderWallet(); toast('↩️ به مقدار پیش‌فرض برگشت');
+};
+
+// =====================================================================
+//                              ترسیم‌ها
+// =====================================================================
+let objs = [], tmp = [], pend = [], tool = 'none', measureSeries = null, pendingAlert = null;
+const dkey = () => 'dr:' + sym;
+const ov = $('ov');
+
+// --- تبدیل زمان ⇄ مختصات لجیکال (مستقل از تایم‌فریم)
+function logicalOf(t) {
+  const n = data.length; if (!n) return 0;
+  const st = TF_SEC[tf];
+  if (t < data[0].time) return -(data[0].time - t) / st;
+  let lo = 0, hi = n - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (data[m].time <= t) lo = m; else hi = m - 1; }
+  return lo + (t - data[lo].time) / st;
+}
+function timeOfLogical(l) {
+  const n = data.length; if (!n) return 0;
+  return data[Math.max(0, Math.min(n - 1, Math.round(l)))].time;
+}
+const toLogical = x => { try { return ts.coordinateToLogical(x); } catch (e) { return null; } };
+const fromLogical = l => { try { return ts.logicalToCoordinate(l); } catch (e) { return null; } };
+
+// --- آمار یک باکس Long/Short: سود/ضرر پولی، RR و اینکه تارگت/استاپ خورده یا نه
+function boxStats(it, pr) {
+  const d = it.t > it.e ? 1 : -1, C = CAPITAL(), L = LEV();
+  const pctOf = x => (x - it.e) / it.e * 100 * d;
+  const tpPct = pctOf(it.t), slPct = pctOf(it.s);
+  const mon = pct => C * L * pct / 100;
+  const rr = Math.abs(it.t - it.e) / Math.max(Math.abs(it.e - it.s), 1e-12);
+  let state = 'live';
+  const n = data.length;
+  if (n) {
+    const i0 = Math.round(logicalOf(it.t0));
+    for (let i = Math.max(0, i0 + 1); i < n; i++) {
+      const c = data[i];
+      const hitSl = d === 1 ? c.low <= it.s : c.high >= it.s;
+      const hitTp = d === 1 ? c.high >= it.t : c.low <= it.t;
+      if (hitSl) { state = 'sl'; break; }          // اگه توی یک کندل هر دو خورده باشن، محتاطانه استاپ حساب میشه
+      if (hitTp) { state = 'tp'; break; }
+    }
+    if (state === 'live' && pr != null) {
+      if ((pr - it.t) * d >= 0) state = 'tp'; else if ((pr - it.s) * d <= 0) state = 'sl';
+    }
+  }
+  const livePct = pr != null ? pctOf(pr) : 0;
+  const curPct = state === 'tp' ? tpPct : state === 'sl' ? slPct : livePct;
+  return {d, tpPct, slPct, rr, state, livePct, tpMoney: mon(tpPct), slMoney: mon(slPct), liveMoney: mon(livePct), curMoney: mon(curPct), L};
+}
+
+// --- ساخت باکس Long/Short (روی لایه‌ی DOM، با دسته‌های قابل کشیدن)
+function buildBox(it) {
+  if (it.t0 == null) { const n = data.length; it.t0 = data[Math.max(0, n - 25)].time; }
+  if (!it.dur) it.dur = 30 * TF_SEC[tf];
+  const el = document.createElement('div'); el.className = 'pbox';
+  el.innerHTML = `<div class="z zp"></div><div class="z zl"></div><div class="ln lp"></div><div class="ln le"></div><div class="ln ls"></div>
+    <div class="chip"><b class="cs"></b><span class="cl"></span><span class="cr"></span><span class="ch"></span><button class="cx" aria-label="حذف">✕</button></div>
+    <div class="pill en"><i class="gr"></i><span class="te"></span></div>
+    <div class="pill tp"><i class="gr"></i><span class="tt"></span></div>
+    <div class="pill sl"><i class="gr"></i><span class="tl"></span></div>`;
+  ov.appendChild(el);
+  const q = s => el.querySelector(s);
+  const zp = q('.zp'), zl = q('.zl'), lp = q('.lp'), le = q('.le'), ls = q('.ls');
+  const chip = q('.chip'), pe = q('.pill.en'), pt = q('.pill.tp'), ps = q('.pill.sl');
+  const mk = (price, color) => candle.createPriceLine({price, color, lineWidth: 1, lineStyle: 2, lineVisible: false, axisLabelVisible: true, title: ''});
+  const lE = mk(it.e, T.gold), lT = mk(it.t, T.tp), lS = mk(it.s, T.sl);
+
+  function txt() {
+    const s = boxStats(it, last());
+    const long = s.d === 1;
+    chip.className = 'chip ' + (long ? 'long' : 'short');
+    q('.cs').textContent = long ? 'LONG ▲' : 'SHORT ▼';
+    q('.cl').textContent = '×' + s.L;
+    q('.cr').textContent = 'RR ' + s.rr.toFixed(1);
+    const ch = q('.ch');
+    ch.textContent = s.state === 'tp' ? '✅ هدف خورد' : s.state === 'sl' ? '❌ استاپ خورد' : '';
+    ch.style.color = s.state === 'tp' ? 'var(--up)' : 'var(--dn)';
+    q('.tt').textContent = `TP · ${sgn(s.tpPct)}% · ${usd(s.tpMoney)}`;
+    q('.tl').textContent = `SL · ${sgn(s.slPct)}% · ${usd(s.slMoney)}`;
+    const te = q('.te'), m = s.curMoney;
+    te.innerHTML = `ورود ${f(it.e)} <span class="${m >= 0 ? 'pg' : 'pr'}">${usd(m)}</span>`;
+    el.classList.toggle('hit-tp', s.state === 'tp');
+    el.classList.toggle('hit-sl', s.state === 'sl');
+  }
+
+  let key = '';
+  function upd() {
+    const W = ov.clientWidth, H = ov.clientHeight;
+    const x1 = fromLogical(logicalOf(it.t0)), x2 = fromLogical(logicalOf(it.t0 + it.dur));
+    const yE = candle.priceToCoordinate(it.e), yT = candle.priceToCoordinate(it.t), yS = candle.priceToCoordinate(it.s);
+    if (x1 == null || x2 == null || yE == null || yT == null || yS == null || x2 < 0 || x1 > W) { if (el.style.display !== 'none') el.style.display = 'none'; key = ''; return; }
+    const k = [x1, x2, yE, yT, yS, W, H].map(v => Math.round(v)).join();
+    if (k === key && el.style.display === 'block') return;
+    key = k; el.style.display = 'block';
+    const w = Math.max(x2 - x1, 2);
+    const tr = (e, x, y) => e.style.transform = `translate(${x}px,${y}px)`;
+    const zone = (e, a, b) => { tr(e, x1, Math.min(a, b)); e.style.width = w + 'px'; e.style.height = Math.max(Math.abs(a - b), 1) + 'px'; };
+    zone(zp, yE, yT); zone(zl, yE, yS);
+    [[lp, yT], [le, yE], [ls, yS]].forEach(([e, y]) => { tr(e, x1, y); e.style.width = w + 'px'; });
+    const cl = v => Math.max(16, Math.min(H - 16, v));
+    const xr = Math.max(Math.min(x2, W), Math.min(160, W)) - 8;
+    pt.style.transform = `translate(${xr}px,${cl(yT)}px) translate(-100%,-50%)`;
+    ps.style.transform = `translate(${xr}px,${cl(yS)}px) translate(-100%,-50%)`;
+    pe.style.transform = `translate(${Math.max(x1, 0) + 8}px,${cl(yE)}px) translate(0,-50%)`;
+    const top = Math.min(yT, yS, yE);
+    chip.style.transform = `translate(${Math.max(x1, 0) + 6}px,${Math.max(top - 8, 32)}px) translate(0,-100%)`;
+  }
+
+  // --- کشیدن دسته‌ها
+  function bindDrag(pill, kind) {
+    pill.addEventListener('pointerdown', ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      try { pill.setPointerCapture(ev.pointerId); } catch (e) {}
+      const r0 = ov.getBoundingClientRect(), st = {e: it.e, t: it.t, s: it.s, t0: it.t0};
+      const x0 = ev.clientX - r0.left, y0 = ev.clientY - r0.top;
+      const p0 = candle.coordinateToPrice(y0), l0 = toLogical(x0);
+      pill.classList.add('drag'); tick();
+      const mv = e2 => {
+        const r = ov.getBoundingClientRect(), x = e2.clientX - r.left, y = e2.clientY - r.top;
+        const p1 = candle.coordinateToPrice(y); if (p1 == null || p0 == null) return;
+        const dp = p1 - p0, gap = st.e * 0.0002, d = st.t > st.e ? 1 : -1;
+        if (kind === 't') { const v = st.t + dp; it.t = rp(d === 1 ? Math.max(v, st.e + gap) : Math.min(v, st.e - gap)); }
+        else if (kind === 's') { const v = st.s + dp; it.s = rp(d === 1 ? Math.min(v, st.e - gap) : Math.max(v, st.e + gap)); }
+        else {
+          it.e = rp(st.e + dp); it.t = rp(st.t + dp); it.s = rp(st.s + dp);
+          const l1 = toLogical(x);
+          if (l0 != null && l1 != null) it.t0 = timeOfLogical(logicalOf(st.t0) + Math.round(l1 - l0));
+        }
+        lE.applyOptions({price: it.e}); lT.applyOptions({price: it.t}); lS.applyOptions({price: it.s});
+        key = ''; txt(); upd(); renderWallet();
+              };
+      const up = () => {
+        pill.classList.remove('drag');
+        pill.removeEventListener('pointermove', mv); pill.removeEventListener('pointerup', up); pill.removeEventListener('pointercancel', up);
+        store.set(dkey(), objs.map(o => o.it));
+      };
+      pill.addEventListener('pointermove', mv); pill.addEventListener('pointerup', up); pill.addEventListener('pointercancel', up);
+    });
+  }
+  bindDrag(pt, 't'); bindDrag(ps, 's'); bindDrag(pe, 'e');
+  q('.cx').addEventListener('click', ev => {
+    ev.stopPropagation();
+    const i = objs.findIndex(o => o.it === it);
+    if (i >= 0) { try { objs[i].rm(); } catch (e) {} objs.splice(i, 1); store.set(dkey(), objs.map(o => o.it)); renderWallet(); toast('🗑 باکس حذف شد'); }
+  });
+
+  const rm = () => { el.remove(); [lE, lT, lS].forEach(l => { try { candle.removePriceLine(l); } catch (e) {} }); };
+  return {rm, upd, txt};
+}
+function refreshBoxes() { for (const o of objs) if (o.txt) o.txt(); }
+(function frame() { for (const o of objs) if (o.upd) o.upd(); requestAnimationFrame(frame); })();
+// پهنای محور قیمت و ارتفاع محور زمان رو حساب می‌کنیم تا باکس روی اون‌ها نیفته
+setInterval(() => {
+  let pw = 56, th = 26;
+  try { pw = chart.priceScale('right').width() || pw; } catch (e) {}
+  try { th = ts.height() || th; } catch (e) {}
+  if (ov.style.right !== pw + 'px') ov.style.right = pw + 'px';
+  if (ov.style.bottom !== th + 'px') ov.style.bottom = th + 'px';
+}, 400);
+
+function build(it) {
+  const line = (p, color, title, style) => candle.createPriceLine({price: p, color, lineWidth: 1, lineStyle: style || 2, axisLabelVisible: true, title});
+  if (it.k === 'h') { const h = line(it.p, T.gold, '—'); return {rm: () => candle.removePriceLine(h)}; }
+  if (it.k === 'al') { const h = line(it.p, T.alert, '🔔'); return {rm: () => candle.removePriceLine(h)}; }
+  if (it.k === 't') {
+    const s = chart.addLineSeries({color: T.trend, lineWidth: 2, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false});
+    s.setData([{time: it.t1, value: it.p1}, {time: it.t2, value: it.p2}]);
+    return {rm: () => chart.removeSeries(s)};
+  }
+  if (it.k === 'pos' || it.k === 'rr') return buildBox(it);
+  return {rm: () => {}};
+}
+function addItem(it, save = true) {
+  const r = build(it); objs.push({it, rm: r.rm, upd: r.upd, txt: r.txt});
+  if (save) store.set(dkey(), objs.map(o => o.it));
+  if (r.txt) r.txt(); renderWallet();
+}
+function restore() { (store.get(dkey(), []) || []).forEach(it => { try { addItem(it, false); } catch (e) {} }); }
+function wipeObjs() { objs.forEach(o => { try { o.rm(); } catch (e) {} }); objs = []; }
+function clearTmp() { tmp.forEach(h => { try { candle.removePriceLine(h); } catch (e) {} }); tmp = []; pend = []; }
+function clearMeasure() {
+  if (measureSeries) { try { chart.removeSeries(measureSeries); } catch (e) {} measureSeries = null; }
+  $('measure').style.display = 'none';
+}
+function hideAlertBar() { $('alertbar').style.display = 'none'; pendingAlert = null; }
+
+// --- قرار دادن باکس Long/Short با یک لمس
+function placeBox(side, price, time) {
+  const H = $('chart').clientHeight;
+  const a = candle.coordinateToPrice(0), b = candle.coordinateToPrice(H);
+  const span = (a != null && b != null) ? Math.abs(a - b) : price * 0.04;
+  const risk = Math.max(span * 0.07, price * 0.0005), d = side === 'long' ? 1 : -1;     // اندازه‌ی پیش‌فرض متناسب با چارت
+  addItem({k: 'pos', e: rp(price), t: rp(price + d * risk * 2), s: rp(price - d * risk), t0: time, dur: 30 * TF_SEC[tf]});
+  haptic('success');
+  toast('👆 دایره‌های TP و SL رو بکش تا تنظیم بشن • ورود رو بکش تا کل باکس جابجا بشه', 5000);
+}
+
+const HINTS = {
+  none: '', h: 'روی چارت بزن تا خط افقی بیاد', t: '📈 نقطه اول خط روند رو بزن',
+  m: '📏 نقطه اول اندازه‌گیری رو بزن', al: '🔔 قیمت هشدار رو روی چارت بزن',
+  long: '🟢 جای ورود Long رو روی چارت بزن', short: '🔴 جای ورود Short رو روی چارت بزن',
+};
+function setHint(t) { const h = $('hint'); if (!t) { h.style.display = 'none'; return; } $('hintTxt').textContent = t; h.style.display = 'flex'; }
+function setTool(t) {
+  tool = t; clearTmp(); hideAlertBar();
+  document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+  setHint(HINTS[t]);
+}
+document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool === tool && tool !== 'none' ? 'none' : b.dataset.tool));
+$('hintX').onclick = () => setTool('none');
+
+function fmtDur(sec) {
+  sec = Math.abs(sec);
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+  return (d ? d + ' روز ' : '') + (h ? h + ' ساعت ' : '') + (!d && m ? m + ' دقیقه' : '');
+}
+chart.subscribeClick(param => {
+  if (tool === 'none' || !param.point) return;
+  const price = candle.coordinateToPrice(param.point.y);
+  if (price == null) return;
+  let time = param.time;
+  if (time == null && ts.coordinateToTime) time = ts.coordinateToTime(param.point.x);
+  if (time == null) time = data[data.length - 1].time;
+
+  if (tool === 'long' || tool === 'short') {
+    let l = param.logical; if (l == null) l = toLogical(param.point.x);
+    const t0 = l != null ? timeOfLogical(Math.min(l, data.length - 1)) : data[data.length - 1].time;
+    const side = tool; setTool('none'); placeBox(side, price, t0); return;
+  }
+  if (tool === 'h') { addItem({k: 'h', p: price}); setTool('none'); return; }
+  if (tool === 'al') {
+    pendingAlert = price;
+    const cur = data[data.length - 1].close;
+    $('alertTxt').textContent = `🔔 ${sym} روی ${f(price)} (${sgn((price - cur) / cur * 100)}% از قیمت فعلی)`;
+    $('alertbar').style.display = 'flex';
+    return;
+  }
+  pend.push({time, price});
+  tmp.push(candle.createPriceLine({price, color: T.tmp, lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: '•'}));
+  if (pend.length < 2) { setHint(tool === 't' ? '📈 نقطه دوم خط روند رو بزن' : '📏 نقطه دوم رو بزن'); return; }
+  const [a, b] = pend;
+  if (tool === 't') {
+    let [p1, p2] = a.time <= b.time ? [a, b] : [b, a];
+    if (p1.time === p2.time) { toast('دو نقطه باید روی دو کندل متفاوت باشن'); clearTmp(); setHint(HINTS.t); return; }
+    addItem({k: 't', t1: p1.time, p1: p1.price, t2: p2.time, p2: p2.price});
+  } else if (tool === 'm') {
+    clearMeasure();
+    const [p1, p2] = a.time <= b.time ? [a, b] : [b, a];
+    if (p1.time !== p2.time) {
+      measureSeries = chart.addLineSeries({color: T.measure, lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false});
+      measureSeries.setData([{time: p1.time, value: p1.price}, {time: p2.time, value: p2.price}]);
+    }
+    const dp = b.price - a.price, pc = dp / a.price * 100, bars = Math.round(Math.abs(b.time - a.time) / TF_SEC[tf]);
+    const m = $('measure');
+    m.innerHTML = `<b class="${dp >= 0 ? 'g' : 'r'}">${dp >= 0 ? '+' : ''}${f(dp)} (${sgn(pc)}%)</b> • ${bars} کندل • ${fmtDur(b.time - a.time)}`;
+    m.style.display = 'block'; m.onclick = clearMeasure;
+  }
+  setTool('none');
+});
+
+$('alOk').onclick = () => {
+  if (pendingAlert == null) return;
+  const price = pendingAlert;
+  addItem({k: 'al', p: price});
+  hideAlertBar(); setTool('none');
+  sendBot({t: 'alert', coin: sym, price});
+};
+$('alNo').onclick = () => { hideAlertBar(); setTool('none'); };
+
+$('bUndo').onclick = () => {
+  if (!objs.length) { toast('چیزی برای برگشت نیست'); return; }
+  const o = objs.pop(); try { o.rm(); } catch (e) {}
+  store.set(dkey(), objs.map(x => x.it)); renderWallet();
+};
+$('bClear').onclick = () => { wipeObjs(); clearTmp(); clearMeasure(); store.set(dkey(), []); renderWallet(); toast('🗑 همه ترسیم‌های این ارز پاک شد'); };
+$('bLast').onclick = () => chart.timeScale().scrollToRealTime();
+
+// ---------- شیت‌ها
+function openSheet(id) { $(id).classList.add('open'); }
+document.querySelectorAll('.sheet').forEach(s => s.addEventListener('click', e => { if (e.target === s) s.classList.remove('open'); }));
+$('bInd').onclick = () => openSheet('indSheet');
+document.querySelectorAll('[data-ind]').forEach(c => c.onchange = () => {
+  ind[c.dataset.ind] = c.checked; store.set('ind', ind); applyVis();
+  if (c.dataset.ind === 'rsi' && c.checked) { fullInd(); const r = chart.timeScale().getVisibleLogicalRange(); if (r) rchart.timeScale().setVisibleLogicalRange(r); }
+});
+$('coinGrid').innerHTML = [...new Set([...POS.map(p => p.coin), ...COINS])].map(c => `<button data-c="${c}">${c}</button>`).join('');
+document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => switchSym(b.dataset.c));
+$('symBtn').onclick = () => openSheet('symSheet');
+$('symGo').onclick = () => { const v = clean($('symInput').value); if (v) switchSym(v); };
+async function switchSym(s) {
+  const old = sym; sym = s;
+  $('symSheet').classList.remove('open');
+  try { await api(`/api/v3/ticker/price?symbol=${s}USDT`); }
+  catch (e) { sym = old; toast('❗ این نماد پیدا نشد'); return; }
+  store.set('sym', sym); load();
+}
+$('tfs').innerHTML = TFS.map(t => `<button data-tf="${t}">${t}</button>`).join('');
+function markTf() { document.querySelectorAll('[data-tf]').forEach(b => b.classList.toggle('on', b.dataset.tf === tf)); }
+document.querySelectorAll('[data-tf]').forEach(b => b.onclick = () => { tf = b.dataset.tf; store.set('tf', tf); markTf(); load(); });
+
+applyTheme(theme, false);
+markTf(); applyVis(); renderWallet(); load();
+})();
+</script>
+</body>
+</html>
